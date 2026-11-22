@@ -34,18 +34,16 @@ console.log('数据目录', dir);
 
 let rec;
 
-await ok('board_record 写入草稿（待确认）', async () => {
+await ok('board_record 写入条目', async () => {
   const out = await call('board_record', { title: '用 JSONL 追加台账', kind: 'decision', scope: '存储' });
   rec = out;
   assert.equal(out.rev, 1);
-  assert.equal(out.item.verified, false);
   assert.equal(store.get(out.id).title, '用 JSONL 追加台账');
 });
 
-await ok('board_brief 默认不吃草稿，只报数量', async () => {
+await ok('board_brief 列出全部条目', async () => {
   const out = await call('board_brief', {});
-  assert.match(out.markdown, /待确认草稿/);
-  assert.doesNotMatch(out.markdown, /用 JSONL 追加台账/);
+  assert.match(out.markdown, /用 JSONL 追加台账/);
 });
 
 await ok('board_update 改标题 → 新修订', async () => {
@@ -62,19 +60,19 @@ await ok('board_update 带错修订号 → STALE_REVISION', async () => {
   );
 });
 
-await ok('AI 不能把状态改成 done', async () => {
+await ok('AI 可以把状态改成 done（权限对等）', async () => {
   const it = store.record({ title: '待验收的任务', kind: 'task', status: 'in_review' }, { by: 'ai' });
-  assert.throws(
-    () => store.update(it.id, { status: 'done' }, { by: 'ai', expectedRev: it.rev }),
-    err => err instanceof BoardError && err.code === 'HUMAN_ONLY'
-  );
+  const r = store.update(it.id, { status: 'done' }, { by: 'ai', expectedRev: it.rev });
+  assert.equal(r.item.status, 'done');
 });
 
-await ok('人接受后进入简报', async () => {
-  store.accept(rec.id, {});
-  const out = await call('board_brief', {});
-  assert.match(out.markdown, /用 JSONL 追加台账（已定）/);
-  assert.equal(out.stats.drafts, 1);
+await ok('board_rollback 回到旧修订（历史保留）', async () => {
+  const before = store.get(rec.id);
+  const out = await call('board_rollback', { id: rec.id, rev: 1 });
+  assert.equal(out.rev, before.rev + 1);
+  assert.equal(store.get(rec.id).title, '用 JSONL 追加台账');
+  const hist = store.history(rec.id);
+  assert.ok(hist.length >= 3);
 });
 
 await ok('状态流转非法时拒绝（backlog → in_review）', async () => {

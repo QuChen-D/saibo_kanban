@@ -40,7 +40,7 @@ export function createTools(store, options = {}) {
   return [
     {
       name: 'board_brief',
-      description: '读取看板简报：按状态列出已确认条目，附待确认草稿数量。只读，不修改数据。',
+      description: '读取看板简报：按状态列出全部条目。只读，不修改数据。',
       parameters: {
         type: 'object',
         properties: {
@@ -74,7 +74,7 @@ export function createTools(store, options = {}) {
     },
     {
       name: 'board_record',
-      description: '把一条新条目写进看板，默认进入收件箱待确认（verified=false）。先用一句话说清楚，再补正文。',
+      description: '把一条新条目写进看板。先用一句话说清楚，再补正文。',
       parameters: {
         type: 'object',
         properties: {
@@ -99,16 +99,16 @@ export function createTools(store, options = {}) {
           properties: { id: { type: 'string' }, rev: { type: 'number' }, item: { type: 'object' } },
           required: ['id', 'rev']
         },
-        render: (_args, value) => text(`已记录 ${value.id}（r${value.rev}，待确认）`)
+        render: (_args, value) => text(`已记录 ${value.id}（r${value.rev}）`)
       },
       execute: wrap(async args => {
-        const item = store.record(args, { by: 'ai', note: 'AI 记录', verified: false });
+        const item = store.record(args, { by: 'ai', note: 'AI 记录' });
         return { id: item.id, rev: item.rev, item: publicItem(item) };
       })
     },
     {
       name: 'board_update',
-      description: '按字段修改一条已确认或待确认的条目。必须带当前修订号；只能改 title/kind/status/scope/body，不能改确认状态。',
+      description: '按字段修改一条条目。必须带当前修订号；只能改 title/kind/status/scope/body。',
       parameters: {
         type: 'object',
         properties: {
@@ -225,6 +225,35 @@ export function createTools(store, options = {}) {
       })
     },
     {
+      name: 'board_rollback',
+      description: '把条目回滚到之前的某个修订。历史不销毁，回滚本身也记一条修订。',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '条目 id' },
+          rev: { type: 'number', description: '要回到的修订号' },
+          note: { type: 'string', description: '回滚理由，会写进修订历史' }
+        },
+        required: ['id', 'rev'],
+        additionalProperties: false
+      },
+      output: {
+        schema: {
+          type: 'object',
+          properties: { id: { type: 'string' }, rev: { type: 'number' } },
+          required: ['id', 'rev']
+        },
+        render: (_args, value) => text(`已回滚 ${value.id} → r${value.rev}`)
+      },
+      execute: wrap(async args => {
+        const result = store.rollback(args.id, args.rev, {
+          by: 'ai',
+          note: args.note || `AI 回滚到 r${args.rev}`
+        });
+        return { id: result.item.id, rev: result.item.rev };
+      })
+    },
+    {
       name: 'board_search',
       description: '检索看板条目：按关键词、状态、类型、范围过滤，返回紧凑列表（默认不含归档与历史修订）。',
       parameters: {
@@ -250,7 +279,7 @@ export function createTools(store, options = {}) {
         },
         render: (_args, value) => text(value.items.length === 0
           ? '没有匹配的条目'
-          : value.items.map(i => `- ${i.id} ${i.title}（${i.status}${i.scope ? ' · ' + i.scope : ''}${i.verified ? '' : ' · 待确认'}）`).join('\n'))
+          : value.items.map(i => `- ${i.id} ${i.title}（${i.status}${i.scope ? ' · ' + i.scope : ''}）`).join('\n'))
       },
       execute: wrap(async args => {
         const result = store.list({

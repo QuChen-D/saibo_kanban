@@ -81,16 +81,13 @@ export function assertTitle(title) {
   return title.trim();
 }
 
-/** 检查一次状态流转；by='ai' 时额外禁止直接写 done。 */
-export function assertTransition(from, to, by) {
+/** 检查一次状态流转；权限对等，AI 与人同一套规则。 */
+export function assertTransition(from, to) {
   if (from === to) return;
   assertStatus(to);
   const allowed = TRANSITIONS[from] || [];
   if (!allowed.includes(to)) {
     throw new BoardError('INVALID_TRANSITION', `状态不能从 ${from} 直接变成 ${to}`);
-  }
-  if (to === 'done' && by === 'ai') {
-    throw new BoardError('HUMAN_ONLY', 'done 只能由人写：AI 最多把条目移到 in_review');
   }
 }
 
@@ -116,14 +113,11 @@ export function isDraft(item) {
   return !item.verified;
 }
 
-/** 简报：默认只吃已确认条目，草稿只报数量。 */
+/** 简报：列出全部未归档条目；回滚兜底，不再区分确认状态。 */
 export function buildBrief(items, options = {}) {
   const maxChars = options.maxChars ?? 4000;
-  const includeDrafts = options.includeDrafts === true;
   const active = items.filter(i => !i.archived);
-  const drafts = active.filter(isDraft);
-  const confirmed = active.filter(i => i.verified);
-  const pool = includeDrafts ? active : confirmed;
+  const pool = active;
 
   const byStatus = new Map(STATUSES.map(s => [s.id, []]));
   for (const item of pool) {
@@ -136,9 +130,6 @@ export function buildBrief(items, options = {}) {
     .map(s => `${s.label} ${byStatus.get(s.id).length}`)
     .join(' · ');
   lines.push(`- 统计：${counts}`);
-  if (drafts.length > 0 && !includeDrafts) {
-    lines.push(`- 另有 ${drafts.length} 条待确认草稿未列入（人点过「接受」后才会进入简报）`);
-  }
 
   const order = ['blocked', 'in_review', 'in_progress', 'todo', 'backlog', 'done'];
   for (const status of order) {

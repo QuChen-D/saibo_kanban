@@ -87,9 +87,6 @@ export class Store {
     assertKind(kind, this.kinds);
     const status = input.status || 'backlog';
     assertStatus(status);
-    if (status === 'done' && by === 'ai') {
-      throw new BoardError('HUMAN_ONLY', 'done 只能由人写：AI 最多把条目移到 in_review');
-    }
     const item = emptyItem();
     item.id = input.id || nextId();
     if (this.items.has(item.id)) throw new BoardError('DUPLICATE_ID', `条目 ${item.id} 已存在`);
@@ -99,7 +96,6 @@ export class Store {
     item.scope = typeof input.scope === 'string' ? input.scope : '';
     item.body = typeof input.body === 'string' ? input.body : '';
     item.source = normalizeSource(input.source);
-    item.verified = context.verified === true;
     item.rev = 1;
     item.createdAt = now;
     item.updatedAt = now;
@@ -132,7 +128,7 @@ export class Store {
     if ('kind' in safe) { assertKind(safe.kind, this.kinds); }
     if ('status' in safe) {
       assertStatus(safe.status);
-      assertTransition(current.status, safe.status, by);
+      assertTransition(current.status, safe.status);
     }
     if ('scope' in safe && typeof safe.scope !== 'string') {
       throw new BoardError('INVALID_SCOPE', 'scope 必须是字符串');
@@ -185,9 +181,6 @@ export class Store {
     }
     const by = context.by === 'human' ? 'human' : 'ai';
     const replacementStatus = replacement.status || 'in_review';
-    if (replacementStatus === 'done' && by === 'ai') {
-      throw new BoardError('HUMAN_ONLY', 'done 只能由人写');
-    }
     const created = this.record({
       ...replacement,
       kind: replacement.kind || old.kind,
@@ -296,7 +289,6 @@ export class Store {
     return {
       total: all.length,
       active: all.filter(i => !i.archived).length,
-      drafts: all.filter(i => !i.archived && isDraft(i)).length,
       archived: all.filter(i => i.archived).length,
       rev: this.events
     };
@@ -315,6 +307,49 @@ export class Store {
       out.push({ rev: event.rev, time: event.time, by: event.by, note: event.note, changes: event.changes });
     }
     return out.sort((a, b) => a.rev - b.rev);
+  }
+
+  /** 取某个修订的完整快照（回滚用）。 */
+  revision(id, rev) {
+    if (!fs.existsSync(this.file)) return null;
+    const raw = fs.readFileSync(this.file, 'utf8');
+    let found = null;
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      if (event.id === id && event.rev === rev && event.item) found = event.item;
+    }
+    return found;
+  }
+
+  /**
+   * 回滚到指定修订：把那一版的字段写成一条新的修订。
+   * 历史不销毁；回滚本身也可再回滚。
+   */
+  rollback(id, rev, context = {}) {
+    const current = this.get(id);
+    const target = this.revision(id, rev);
+    if (!target) throw new BoardError('NOT_FOUND', `条目 ${id} 没有 r${rev}`);
+    const now = new Date().toISOString();
+    const next = {
+      ...target,
+      id: current.id,
+      createdAt: current.createdAt,
+      rev: current.rev + 1,
+      updatedAt: now,
+      archived: false,
+      supersededBy: null,
+      mergedInto: null
+    };
+    this.append({
+      v: SCHEMA_VERSION, id, rev: next.rev, time: now,
+      by: context.by === 'human' ? 'human' : 'ai',
+      note: context.note || `回滚到 r${rev}`,
+      changes: { rollback: { from: `r${current.rev}`, to: `r${rev}` } },
+      item: next
+    });
+    return { item: next, changed: true };
   }
 }
 
