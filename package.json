@@ -1,6 +1,6 @@
 {
-  "name": "saibo_kanban",
-  "version": "0.2.1",
+  "name": "saibo-kanban",
+  "version": "0.2.3",
   "description": "AI 与人共用的活看板：草稿进收件箱、人做分拣、字段级修订可回滚，零 token 纠错。",
   "keywords": [
     "dsh",
@@ -38,7 +38,7 @@
     "LICENSE"
   ],
   "bin": {
-    "saibo-board": "./bin/board.mjs"
+    "saibo-board": "bin/board.mjs"
   },
   "dsh": {
     "bundle": {
@@ -48,5 +48,13 @@
   "scripts": {
     "check": "node --check index.js && node --check core.js && node --check store.js && node --check tools.js",
     "test": "node test/run.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/QuChen-D/saibo_kanban.git"
+  },
+  "homepage": "https://github.com/QuChen-D/saibo_kanban#readme",
+  "bugs": {
+    "url": "https://github.com/QuChen-D/saibo_kanban/issues"
   }
 }

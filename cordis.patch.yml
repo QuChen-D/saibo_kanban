@@ -1,5 +1,5 @@
-# saibo_kanban bundle patch: one row. Rules live in config, never in this file.
+# saibo-kanban bundle patch: one row. Rules live in config, never in this file.
 - insert:
-    - id: saibo_kanban
-      name: saibo_kanban
+    - id: saibo-kanban
+      name: saibo-kanban
       config: {}
