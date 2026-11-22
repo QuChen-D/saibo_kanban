@@ -21,7 +21,8 @@ AI 只能按字段 patch，不能整条覆盖、不能标记完成、不能物�
 
 ## 使用
 
-安装后在任意会话里让 agent 用 `board_record` 记一条，用 `board_brief` 取简报。
+安装后在任意会话里让 agent 用 `board_record` 记一条，用 `board_brief` 取简报；
+人的确认与归档用 CLI：`node bin/board.mjs inbox` 查看，`accept <id>` 接受。
 0.3.0 起看板页面会出现在 DSH 中（表格 / 看板 / 收件箱三视图）。
 
 ## 许可

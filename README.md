@@ -54,6 +54,35 @@ dsh plugin --profile web add /absolute/path/to/saibo_kanban
 
 它验证的是 0.3.0 要搬进 DSH 的交互，不是最终实现。
 
+## 怎么用（现在就能用）
+
+**1. 在对话里让 agent 记**
+
+```
+记一条：把导入改成列映射 + 预览
+看看板简报
+找一下关于表单的条目
+```
+
+agent 会调 `board_*` 工具。注意：AI 写进去的是**待确认草稿**，要在收件箱里由人接受。
+
+**2. 用 CLI（人的入口，0 token）**
+
+```bash
+node bin/board.mjs inbox            # 看待确认
+node bin/board.mjs accept <id>      # 接受
+node bin/board.mjs add "标题" --kind decision --scope 存储
+node bin/board.mjs list             # 全部条目
+node bin/board.mjs show <id>        # 详情 + 修订历史
+node bin/board.mjs brief            # 简报（只读已确认）
+```
+
+数据默认在 `$DSH_HOME/saibo_kanban/records.jsonl`，可用 `--data-dir` 或环境变量 `SAIBO_DATA_DIR` 指定。
+
+**3. 页面（0.3.0 接入）**
+
+收件箱 / 看板 / 表格三视图，行为与 `demo/index.html` 一致。
+
 ## 工具
 
 | 工具 | 作用 |

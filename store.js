@@ -301,6 +301,21 @@ export class Store {
       rev: this.events
     };
   }
+
+  /** 读取某个条目的完整修订历史（直接扫文件，不改内存）。 */
+  history(id) {
+    if (!fs.existsSync(this.file)) return [];
+    const raw = fs.readFileSync(this.file, 'utf8');
+    const out = [];
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      if (event.id !== id) continue;
+      out.push({ rev: event.rev, time: event.time, by: event.by, note: event.note, changes: event.changes });
+    }
+    return out.sort((a, b) => a.rev - b.rev);
+  }
 }
 
 function normalizeSource(source) {

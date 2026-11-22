@@ -1,6 +1,6 @@
 {
   "name": "saibo_kanban",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AI 与人共用的活看板：草稿进收件箱、人做分拣、字段级修订可回滚，零 token 纠错。",
   "keywords": [
     "dsh",
@@ -28,6 +28,7 @@
     "core.js",
     "store.js",
     "tools.js",
+    "bin",
     "cordis.patch.yml",
     "locale/*.json",
     "docs",
@@ -36,6 +37,9 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
+  "bin": {
+    "saibo-board": "./bin/board.mjs"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

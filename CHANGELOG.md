@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- 新增 CLI `saibo-board`（`bin/board.mjs`）：`list / inbox / add / show / accept / unaccept /
+  archive / restore / update / search / brief`。人的操作走本地直写，不经过模型。
+- `store.history(id)`：读取单条目的完整修订历史。
+
 ## 0.2.0
 
 - `core.js`：条目模型、类型/状态校验、状态机、字段级 diff、简报、检索。
