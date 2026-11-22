@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>看板 · 静态原型</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --panel-2:#fbfbfc; --text:#17181a; --muted:#6b7280;
+  --line:#e6e7eb; --line-soft:#f0f1f4; --accent:#2563eb; --accent-soft:#eff4ff;
+  --ok:#16a34a; --warn:#d97706; --danger:#dc2626;
+  --r:12px; --shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.06);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#101114; --panel:#17181c; --panel-2:#1c1d22; --text:#e8e9ec; --muted:#9aa0aa;
+    --line:#2a2c33; --line-soft:#23252b; --accent:#6b9bff; --accent-soft:#1b2436;
+    --ok:#4ade80; --warn:#fbbf24; --danger:#f87171;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+.topbar{
+  position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:14px;
+  padding:10px 18px;background:color-mix(in srgb,var(--panel) 88%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:baseline;gap:8px;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+.brand .tag{font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+.tabs{display:flex;gap:2px;background:var(--panel-2);border:1px solid var(--line);padding:3px;border-radius:10px}
+.tabs button{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:7px;color:var(--muted);font-weight:550;font-size:13px}
+.tabs button b{font-weight:600;font-size:11px;color:var(--muted);background:var(--bg);border-radius:999px;padding:0 6px;min-width:18px;text-align:center;line-height:18px}
+.tabs button.active{background:var(--panel);color:var(--text);box-shadow:0 1px 2px rgba(16,24,40,.08)}
+.tabs button.active b{background:var(--accent-soft);color:var(--accent)}
+#search{
+  margin-left:auto;width:min(320px,34vw);padding:7px 11px;border:1px solid var(--line);
+  border-radius:9px;background:var(--panel);outline:none
+}
+#search:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.ghost{color:var(--muted);padding:7px 10px;border-radius:8px;font-size:13px}
+.ghost:hover{background:var(--panel-2);color:var(--text)}
+main{padding:16px 18px 60px;max-width:1440px;margin:0 auto}
+.view{display:none}
+.view.active{display:block}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.hint{color:var(--muted);font-size:12.5px;margin:0 0 12px}
+.hint kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--panel-2)}
+
+/* quick add */
+.quickadd{display:flex;gap:10px;align-items:center;padding:10px 12px;margin-bottom:14px}
+.quickadd input{flex:1;border:0;outline:none;background:none;padding:6px 4px;font-size:14px}
+.quickadd .k{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:7px;padding:3px 8px}
+
+/* inbox */
+.inbox-list{display:flex;flex-direction:column}
+.inbox-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line-soft)}
+.inbox-item:first-child{border-top:0}
+.inbox-item .t{flex:1;min-width:0}
+.inbox-item .t .title{font-weight:560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inbox-item .t .meta{font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act{padding:5px 11px;border-radius:7px;border:1px solid var(--line);font-size:12.5px;font-weight:550;background:var(--panel)}
+.act:hover{border-color:var(--muted)}
+.act.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.act.primary:hover{filter:brightness(1.06)}
+.act.danger{color:var(--danger)}
+
+/* board */
+.board{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:12px;align-items:start}
+@media (max-width:1100px){.board{grid-template-columns:repeat(3,minmax(180px,1fr))}}
+@media (max-width:720px){.board{grid-template-columns:repeat(2,minmax(140px,1fr))}}
+.col{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);min-height:120px;display:flex;flex-direction:column}
+.col-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line-soft);font-weight:600;font-size:13px}
+.col-head .n{color:var(--muted);font-weight:500;font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%}
+.col-body{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:80px;flex:1}
+.col.over{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--accent-soft)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 11px;cursor:grab}
+.card:active{cursor:grabbing}
+.card .cm{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.card .title{font-weight:550;font-size:13.5px;line-height:1.45}
+.card .foot{display:flex;align-items:center;gap:8px;margin-top:7px;font-size:11.5px;color:var(--muted)}
+.card.draft{border-style:dashed;border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+
+/* table */
+.table-wrap{overflow:auto}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px}
+th{position:sticky;top:0;background:var(--panel-2);text-align:left;font-weight:600;font-size:12px;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 12px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+tr:hover td{background:color-mix(in srgb,var(--accent-soft) 45%,transparent)}
+tr.draft td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+.cell-title{font-weight:540;cursor:text;border-radius:6px;padding:2px 4px;margin:-2px -4px;min-height:22px}
+.cell-title:hover{background:var(--accent-soft)}
+.cell-title input{width:100%;border:1px solid var(--accent);border-radius:6px;padding:2px 4px;background:var(--panel);outline:none}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-size:12px;font-weight:500;white-space:nowrap}
+.chip:hover{border-color:var(--muted)}
+.chip .d{width:7px;height:7px;border-radius:50%}
+.chip.scope{background:var(--panel-2);color:var(--muted)}
+.chip.empty{color:var(--muted);border-style:dashed}
+.verify{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;background:var(--panel)}
+.verify.on{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line));background:color-mix(in srgb,var(--ok) 8%,var(--panel))}
+.id-cell{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.menu{position:fixed;z-index:60;min-width:150px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:5px}
+.menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 9px;border-radius:7px;font-size:13px}
+.menu button:hover{background:var(--accent-soft)}
+.menu .d{width:8px;height:8px;border-radius:50%}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(15,18,25,.28);z-index:40;opacity:0;pointer-events:none;transition:opacity .15s}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(480px,94vw);background:var(--panel);border-left:1px solid var(--line);z-index:50;transform:translateX(102%);transition:transform .2s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.drawer.on{transform:none}
+.drawer-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.drawer-head .id{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.drawer-head .x{margin-left:auto;color:var(--muted);padding:4px 8px;border-radius:7px}
+.drawer-head .x:hover{background:var(--panel-2)}
+.drawer-body{overflow:auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:12px;color:var(--muted);font-weight:560}
+.field input,.field select,.field textarea{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel);outline:none;width:100%}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.field textarea{min-height:84px;resize:vertical}
+.meta-row{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.hist{border-top:1px solid var(--line);padding-top:8px}
+.hist h4{margin:0 0 8px;font-size:12px;color:var(--muted);font-weight:600}
+.hist-item{position:relative;padding:0 0 14px 16px;border-left:1px solid var(--line);margin-left:4px}
+.hist-item::before{content:"";position:absolute;left:-4px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--line)}
+.hist-item:first-child::before{background:var(--accent)}
+.hist-item .h-top{display:flex;gap:8px;align-items:baseline;font-size:12px;color:var(--muted)}
+.hist-item .by{font-weight:600;color:var(--text)}
+.hist-item .changes{margin-top:4px;font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+.hist-item .changes .from{color:var(--muted);text-decoration:line-through}
+.hist-item .changes .to{color:var(--text)}
+.drawer-foot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);margin-top:auto}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);z-index:70;display:flex;align-items:center;gap:14px;background:var(--text);color:var(--bg);padding:10px 14px;border-radius:10px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.18s;font-size:13px}
+.toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.toast button{color:var(--bg);font-weight:650;text-decoration:underline;text-underline-offset:2px}
+.empty-state{padding:36px 14px;text-align:center;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">看板 <span class="tag">静态原型 · 数据仅存本地</span></div>
+  <nav class="tabs" id="tabs">
+    <button data-view="inbox">收件箱 <b id="cnt-inbox">0</b></button>
+    <button data-view="board">看板 <b id="cnt-board">0</b></button>
+    <button data-view="table" class="active">表格 <b id="cnt-table">0</b></button>
+  </nav>
+  <input id="search" placeholder="搜索标题 / 编号 / 范围" autocomplete="off">
+  <button class="ghost" id="reset">重置演示数据</button>
+</header>
+
+<main>
+  <section class="view" id="view-inbox">
+    <p class="hint">AI 从会话里提炼的草稿都落在这里。人只做四件事：<b>接受 / 退回 / 合并 / 删除</b> —— 本地动作，不经过模型，不花 token。</p>
+    <div class="panel quickadd">
+      <span class="k">＋</span>
+      <input id="quickadd-inbox" placeholder="快加一条（回车创建草稿）" autocomplete="off">
+    </div>
+    <div class="panel inbox-list" id="inbox-list"></div>
+  </section>
+
+  <section class="view" id="view-board">
+    <p class="hint">拖拽卡片换列 = 改状态，会产生一条新修订；虚线卡 = 待确认（AI 写入但人还没接受）。</p>
+    <div class="board" id="board"></div>
+  </section>
+
+  <section class="view active" id="view-table">
+    <p class="hint">点标题直接改，点 <kbd>类型</kbd>/<kbd>状态</kbd>/<kbd>范围</kbd> 换值，点 <kbd>✓</kbd> 切换确认。每次改动记一条修订，右侧抽屉可看历史。</p>
+    <div class="panel quickadd">
+      <span class="k">＋</span>
+      <input id="quickadd-table" placeholder="快加一条（回车创建草稿，落到收件箱）" autocomplete="off">
+    </div>
+    <div class="panel table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:90px">编号</th>
+            <th>标题</th>
+            <th style="width:84px">类型</th>
+            <th style="width:104px">状态</th>
+            <th style="width:110px">范围</th>
+            <th style="width:88px">确认</th>
+            <th style="width:56px">修订</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty-state" id="table-empty" hidden>没有匹配的条目</div>
+    </div>
+  </section>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- 词表（未来来自 config，不写死在代码里） ---------- */
+  const KINDS = [
+    { id: 'task',     label: '任务' },
+    { id: 'decision', label: '决策' },
+    { id: 'pitfall',  label: '踩坑' },
+    { id: 'design',   label: '设计' }
+  ];
+  const STATUSES = [
+    { id: 'backlog',     label: '待规划', color: '#9ca3af' },
+    { id: 'todo',        label: '待办',   color: '#3b82f6' },
+    { id: 'in_progress', label: '进行中', color: '#f59e0b' },
+    { id: 'in_review',   label: '待验收', color: '#8b5cf6' },
+    { id: 'done',        label: '已完成', color: '#22c55e' },
+    { id: 'blocked',     label: '受阻',   color: '#ef4444' }
+  ];
+  const SCOPES = ['看板插件', '存储', '表单', '导入', '编排', '记忆'];
+
+  const kindOf = id => KINDS.find(k => k.id === id) || KINDS[0];
+  const statusOf = id => STATUSES.find(s => s.id === id) || STATUSES[0];
+
+  /* ---------- 演示数据：每条都带修订历史 ---------- */
+  function seed() {
+    const t = (h, m) => new Date(2026, 10, 22, h, m).toISOString();
+    return [
+      { id: 'b-3f7a', title: '用 JSONL 追加台账，不引数据库', kind: 'decision', status: 'done', scope: '存储', verified: true, rev: 3,
+        body: '零依赖、可 diff、可备份；人机同写只经 host 一个写者。换 SQLite/PG 只换 store 适配器。',
+        source: { type: 'session', ref: 'session-627683cd #19:31' },
+        history: [
+          { rev: 1, time: t(19, 31), by: 'AI', note: '从会话提炼', changes: [{ field: 'title', from: '', to: '用 JSONL 追加台账，不引数据库' }] },
+          { rev: 2, time: t(19, 34), by: '人', note: '接受草稿', changes: [{ field: 'verified', from: 'false', to: 'true' }] },
+          { rev: 3, time: t(19, 52), by: '人', note: '补决策理由', changes: [{ field: 'body', from: '（空）', to: '零依赖、可 diff、可备份…' }] }
+        ] },
+      { id: 'b-91c2', title: '看板的表单只保留三个入口', kind: 'design', status: 'in_review', scope: '表单', verified: true, rev: 2,
+        body: '快加、就地改、详情抽屉；不做全字段录入弹窗。',
+        source: { type: 'session', ref: 'session-627683cd #19:58' },
+        history: [
+          { rev: 1, time: t(19, 58), by: 'AI', note: '从会话提炼', changes: [{ field: 'title', from: '', to: '看板的表单只保留三个入口' }] },
+          { rev: 2, time: t(20, 3), by: '人', note: '接受并补充', changes: [{ field: 'body', from: '（空）', to: '快加、就地改、详情抽屉…' }, { field: 'verified', from: 'false', to: 'true' }] }
+        ] },
+      { id: 'b-5d08', title: 'done 永远属于人，AI 只能到 in_review', kind: 'decision', status: 'done', scope: '看板插件', verified: true, rev: 1,
+        body: '参考 dsh-taskboard：agent 调 move→done 被代码闸直接拒绝，不是提示词约定。',
+        source: { type: 'web', ref: 'cloader/dsh-taskboard README' },
+        history: [{ rev: 1, time: t(20, 12), by: 'AI', note: '从参考实现提炼', changes: [{ field: 'title', from: '', to: 'done 永远属于人，AI 只能到 in_review' }] }] },
+      { id: 'b-77aa', title: '乐观锁：每次写都必须带 version', kind: 'decision', status: 'todo', scope: '存储', verified: false, rev: 1,
+        body: '两个参考实现都强制 expected_version；冲突就重读，不自动重试。',
+        source: { type: 'web', ref: 'shengsheng90/DSH-taskboard' },
+        history: [{ rev: 1, time: t(20, 14), by: 'AI', note: '从参考实现提炼', changes: [{ field: 'title', from: '', to: '乐观锁：每次写都必须带 version' }] }] },
+      { id: 'b-2e31', title: 'Excel 的问题不是表格，是没有行身份', kind: 'pitfall', status: 'backlog', scope: '导入', verified: false, rev: 1,
+        body: '642 行里 637 行 DONE，整列「-」，改一行即覆盖，没法追。',
+        source: { type: 'file', ref: '开发任务管理看板.xlsx / 任务主表' },
+        history: [{ rev: 1, time: t(20, 14), by: 'AI', note: '从表格诊断提炼', changes: [{ field: 'title', from: '', to: 'Excel 的问题不是表格，是没有行身份' }] }] },
+      { id: 'b-a640', title: 'AI 只能字段级 patch，不能整条覆盖', kind: 'decision', status: 'done', scope: '表单', verified: true, rev: 1,
+        body: 'update 工具只暴露 patch 字段，篡改在结构上没有入口。',
+        source: { type: 'session', ref: 'session-b1560492 #2' },
+        history: [{ rev: 1, time: t(20, 20), by: 'AI', note: '从讨论提炼', changes: [{ field: 'title', from: '', to: 'AI 只能字段级 patch，不能整条覆盖' }] }] },
+      { id: 'b-cc14', title: '导入只做列映射 + 前 20 行预览', kind: 'design', status: 'in_progress', scope: '导入', verified: true, rev: 2,
+        body: '不逐行填表；映射一次，冲突出报告。',
+        source: { type: 'session', ref: 'session-627683cd #19:58' },
+        history: [
+          { rev: 1, time: t(20, 24), by: 'AI', note: '从讨论提炼', changes: [{ field: 'title', from: '', to: '导入只做列映射 + 前 20 行预览' }] },
+          { rev: 2, time: t(20, 27), by: '人', note: '接受', changes: [{ field: 'verified', from: 'false', to: 'true' }] }
+        ] },
+      { id: 'b-88e0', title: '收件箱是唯一新条目入口', kind: 'design', status: 'in_review', scope: '看板插件', verified: true, rev: 1,
+        body: 'AI 写草稿 → 人分拣 → 才进看板正列。',
+        source: { type: 'session', ref: 'session-b1560492 #3' },
+        history: [{ rev: 1, time: t(20, 30), by: 'AI', note: '从讨论提炼', changes: [{ field: 'title', from: '', to: '收件箱是唯一新条目入口' }] }] },
+      { id: 'b-1b55', title: '归档带 5 秒撤销，不做二次确认弹窗', kind: 'design', status: 'todo', scope: '表单', verified: false, rev: 1,
+        body: '删除=归档；撤销条比确认框快。',
+        source: { type: 'session', ref: 'session-b1560492 #3' },
+        history: [{ rev: 1, time: t(20, 33), by: 'AI', note: '从讨论提炼', changes: [{ field: 'title', from: '', to: '归档带 5 秒撤销，不做二次确认弹窗' }] }] },
+      { id: 'b-4c9d', title: 'brief 只吃 verified 条目', kind: 'decision', status: 'done', scope: '记忆', verified: true, rev: 1,
+        body: '未确认的草稿不进入任何下游摘要，防止污染。',
+        source: { type: 'session', ref: 'session-b1560492 #2' },
+        history: [{ rev: 1, time: t(20, 34), by: 'AI', note: '从讨论提炼', changes: [{ field: 'title', from: '', to: 'brief 只吃 verified 条目' }] }] }
+    ];
+  }
+
+  /* ---------- 状态 ---------- */
+  const KEY = 'dsh-board-demo-v1';
+  let state = { view: 'table', query: '', items: [], drawerId: null, undo: null };
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) { state.items = JSON.parse(raw); return; }
+    } catch (e) { /* 忽略损坏数据 */ }
+    state.items = seed();
+    save();
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state.items)); } catch (e) { /* 隐私模式忽略 */ }
+  }
+
+  /* ---------- 小工具 ---------- */
+  const $ = sel => document.querySelector(sel);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const now = () => new Date();
+  const hhmm = d => { const x = new Date(d); return String(x.getHours()).padStart(2, '0') + ':' + String(x.getMinutes()).padStart(2, '0'); };
+  const itemById = id => state.items.find(i => i.id === id);
+  const visible = () => {
+    const q = state.query.trim().toLowerCase();
+    if (!q) return state.items;
+    return state.items.filter(i => (i.title + ' ' + i.id + ' ' + i.scope + ' ' + kindOf(i.kind).label + ' ' + statusOf(i.status).label).toLowerCase().includes(q));
+  };
+  const isDraft = i => !i.verified;
+
+  /* ---------- 写入：所有修改都走这里 → 新修订 ---------- */
+  function mutate(id, changes, by, note) {
+    const it = itemById(id);
+    if (!it) return;
+    const diff = [];
+    Object.keys(changes).forEach(f => {
+      const from = f === 'body' ? (it.body || '（空）') : String(it[f] == null ? '' : it[f]);
+      const to = f === 'body' ? (changes[f] || '（空）') : String(changes[f] == null ? '' : changes[f]);
+      if (from !== to) diff.push({ field: f, from, to });
+    });
+    if (!diff.length) return;
+    Object.assign(it, changes);
+    it.rev += 1;
+    it.history.push({ rev: it.rev, time: now().toISOString(), by, note: note || '', changes: diff });
+    save();
+    renderAll();
+    if (state.drawerId === id) openDrawer(id, true);
+  }
+
+  /* ---------- 归档 + 撤销 ---------- */
+  function archive(id) {
+    const idx = state.items.findIndex(i => i.id === id);
+    if (idx < 0) return;
+    const [removed] = state.items.splice(idx, 1);
+    save(); closeDrawer(); renderAll();
+    showToast('已归档「' + shorten(removed.title, 18) + '」', '撤销', () => {
+      state.items.splice(idx, 0, removed); save(); renderAll();
+    });
+  }
+  function shorten(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
+
+  let toastTimer = null;
+  function showToast(text, actionLabel, action) {
+    const el = $('#toast');
+    el.innerHTML = '<span></span>';
+    el.querySelector('span').textContent = text;
+    if (actionLabel) {
+      const b = document.createElement('button');
+      b.textContent = actionLabel;
+      b.onclick = () => { action(); hideToast(); };
+      el.appendChild(b);
+    }
+    el.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, 5000);
+  }
+  function hideToast() { $('#toast').classList.remove('on'); }
+
+  /* ---------- 视图切换 ---------- */
+  function setView(v) {
+    state.view = v;
+    document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+    document.querySelectorAll('.view').forEach(s => s.classList.toggle('active', s.id === 'view-' + v));
+    renderAll();
+  }
+
+  /* ---------- 快加 ---------- */
+  function quickAdd(title) {
+    title = (title || '').trim();
+    if (!title) return;
+    const id = 'b-' + Math.random().toString(16).slice(2, 6);
+    const it = {
+      id, title, kind: 'task', status: 'backlog', scope: '', verified: false, rev: 1, body: '',
+      source: { type: 'session', ref: '手工快加' },
+      history: [{ rev: 1, time: now().toISOString(), by: '人', note: '快加草稿', changes: [{ field: 'title', from: '', to: title }] }]
+    };
+    state.items.unshift(it);
+    save(); renderAll();
+  }
+
+  /* ---------- 渲染：表格 ---------- */
+  function renderTable() {
+    const rows = visible();
+    const tb = $('#tbody');
+    tb.innerHTML = rows.map(it => {
+      const k = kindOf(it.kind), s = statusOf(it.status);
+      return '<tr data-id="' + it.id + '" class="' + (isDraft(it) ? 'draft' : '') + '">' +
+        '<td class="id-cell">' + esc(it.id) + '</td>' +
+        '<td><div class="cell-title" data-edit="title">' + esc(it.title) + '</div></td>' +
+        '<td><button class="chip" data-menu="kind"><span class="d" style="background:' + chipColor(it.kind) + '"></span>' + esc(k.label) + '</button></td>' +
+        '<td><button class="chip" data-menu="status"><span class="d" style="background:' + s.color + '"></span>' + esc(s.label) + '</button></td>' +
+        '<td><button class="chip ' + (it.scope ? 'scope' : 'empty') + '" data-menu="scope">' + esc(it.scope || '＋范围') + '</button></td>' +
+        '<td><button class="verify ' + (it.verified ? 'on' : '') + '" data-verify>' + (it.verified ? '✓ 已确认' : '待确认') + '</button></td>' +
+        '<td class="id-cell">r' + it.rev + '</td>' +
+        '</tr>';
+    }).join('');
+    $('#table-empty').hidden = rows.length > 0;
+  }
+
+  function chipColor(kind) {
+    return { task: '#3b82f6', decision: '#8b5cf6', pitfall: '#f97316', design: '#14b8a6' }[kind] || '#9ca3af';
+  }
+
+  /* ---------- 渲染：看板 ---------- */
+  function renderBoard() {
+    const items = visible();
+    const wrap = $('#board');
+    wrap.innerHTML = STATUSES.map(s => {
+      const list = items.filter(i => i.status === s.id);
+      return '<div class="col" data-status="' + s.id + '">' +
+        '<div class="col-head"><span class="dot" style="background:' + s.color + '"></span>' + esc(s.label) +
+        '<span class="n" style="margin-left:auto">' + list.length + '</span></div>' +
+        '<div class="col-body">' + list.map(it => {
+          const k = kindOf(it.kind);
+          return '<div class="card ' + (isDraft(it) ? 'draft' : '') + '" draggable="true" data-id="' + it.id + '">' +
+            '<div class="cm"><span class="chip" style="font-size:11px;padding:0 6px"><span class="d" style="background:' + chipColor(it.kind) + '"></span>' + esc(k.label) + '</span></div>' +
+            '<div class="title">' + esc(it.title) + '</div>' +
+            '<div class="foot">' + (it.scope ? '<span>' + esc(it.scope) + '</span>' : '<span>未定范围</span>') +
+            '<span style="margin-left:auto">' + (it.verified ? '✓' : '◌ 待确认') + '</span></div>' +
+            '</div>';
+        }).join('') + '</div></div>';
+    }).join('');
+  }
+
+  /* ---------- 渲染：收件箱 ---------- */
+  function renderInbox() {
+    const drafts = visible().filter(isDraft).sort((a, b) => a.rev - b.rev);
+    const box = $('#inbox-list');
+    if (!drafts.length) {
+      box.innerHTML = '<div class="empty-state">收件箱是空的。AI 写完草稿会出现在这里。</div>';
+      return;
+    }
+    box.innerHTML = drafts.map(it => {
+      const k = kindOf(it.kind);
+      const src = it.source ? (it.source.type === 'session' ? '会话' : it.source.type === 'file' ? '表格' : '资料') + ' · ' + it.source.ref : '无来源';
+      return '<div class="inbox-item" data-id="' + it.id + '">' +
+        '<span class="chip"><span class="d" style="background:' + chipColor(it.kind) + '"></span>' + esc(k.label) + '</span>' +
+        '<div class="t"><div class="title">' + esc(it.title) + '</div><div class="meta">' + esc(src) + ' · r' + it.rev + '</div></div>' +
+        '<button class="act primary" data-accept>接受</button>' +
+        '<button class="act" data-return>退回</button>' +
+        '<button class="act danger" data-drop>删除</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  /* ---------- 抽屉 ---------- */
+  function openDrawer(id, silent) {
+    const it = itemById(id);
+    if (!it) return;
+    state.drawerId = id;
+    const d = $('#drawer');
+    const k = kindOf(it.kind), s = statusOf(it.status);
+    d.innerHTML =
+      '<div class="drawer-head"><span class="id">' + esc(it.id) + '</span>' +
+      '<span class="chip"><span class="d" style="background:' + chipColor(it.kind) + '"></span>' + esc(k.label) + '</span>' +
+      '<button class="x" id="drawer-close" title="关闭">✕</button></div>' +
+      '<div class="drawer-body">' +
+        '<div class="field"><label>标题</label><input id="d-title" value="' + esc(it.title) + '"></div>' +
+        '<div class="field"><label>类型</label><select id="d-kind">' + KINDS.map(x => '<option value="' + x.id + '"' + (x.id === it.kind ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label>状态</label><select id="d-status">' + STATUSES.map(x => '<option value="' + x.id + '"' + (x.id === it.status ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label>范围</label><select id="d-scope"><option value="">（未定）</option>' + SCOPES.map(x => '<option value="' + esc(x) + '"' + (x === it.scope ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label>正文</label><textarea id="d-body">' + esc(it.body || '') + '</textarea></div>' +
+        '<div class="meta-row"><span>来源：' + esc(it.source ? it.source.ref : '—') + '</span><span>当前修订 r' + it.rev + '</span><span>' + (it.verified ? '✓ 已确认' : '◌ 待确认') + '</span></div>' +
+        '<div class="hist"><h4>修订历史（' + it.history.length + '）</h4>' +
+          it.history.slice().reverse().map(h =>
+            '<div class="hist-item"><div class="h-top"><span class="by">' + esc(h.by) + '</span><span>r' + h.rev + '</span><span>' + fmtTime(h.time) + '</span>' + (h.note ? '<span>· ' + esc(h.note) + '</span>' : '') + '</div>' +
+            '<div class="changes">' + h.changes.map(c => '<div><span style="color:var(--muted)">' + esc(fieldLabel(c.field)) + '：</span><span class="from">' + esc(c.from) + '</span> → <span class="to">' + esc(c.to) + '</span></div>').join('') + '</div></div>'
+          ).join('') +
+        '</div>' +
+      '</div>' +
+      '<div class="drawer-foot">' +
+        (it.verified ? '<button class="act" id="d-unverify">取消确认</button>' : '<button class="act primary" id="d-accept">接受</button>') +
+        '<button class="act danger" id="d-archive" style="margin-left:auto">归档</button>' +
+      '</div>';
+    if (!silent) { d.classList.add('on'); d.setAttribute('aria-hidden', 'false'); $('#scrim').classList.add('on'); }
+    bindDrawer(it);
+  }
+
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hhmm(d);
+  }
+  function fieldLabel(f) {
+    return { title: '标题', kind: '类型', status: '状态', scope: '范围', body: '正文', verified: '确认' }[f] || f;
+  }
+
+  function bindDrawer(it) {
+    const close = () => closeDrawer();
+    $('#drawer-close').onclick = close;
+    const apply = () => {
+      const changes = {
+        title: $('#d-title').value.trim(),
+        kind: $('#d-kind').value,
+        status: $('#d-status').value,
+        scope: $('#d-scope').value,
+        body: $('#d-body').value
+      };
+      mutate(it.id, changes, '人', '详情编辑');
+    };
+    ['#d-title', '#d-kind', '#d-status', '#d-scope', '#d-body'].forEach(sel => {
+      const el = $(sel);
+      el.addEventListener('change', apply);
+      if (el.tagName === 'INPUT') el.addEventListener('blur', apply);
+    });
+    const acc = $('#d-accept');
+    if (acc) acc.onclick = () => mutate(it.id, { verified: true }, '人', '接受');
+    const un = $('#d-unverify');
+    if (un) un.onclick = () => mutate(it.id, { verified: false }, '人', '取消确认');
+    $('#d-archive').onclick = () => archive(it.id);
+  }
+
+  function closeDrawer() {
+    state.drawerId = null;
+    $('#drawer').classList.remove('on');
+    $('#drawer').setAttribute('aria-hidden', 'true');
+    $('#scrim').classList.remove('on');
+  }
+
+  /* ---------- 芯片菜单 ---------- */
+  let openMenu = null;
+  function closeMenu() { if (openMenu) { openMenu.remove(); openMenu = null; } }
+  function showMenu(anchor, options, current, onPick) {
+    closeMenu();
+    const m = document.createElement('div');
+    m.className = 'menu';
+    options.forEach(o => {
+      const b = document.createElement('button');
+      b.innerHTML = o.color ? '<span class="d" style="background:' + o.color + '"></span>' : '';
+      b.appendChild(document.createTextNode(o.label));
+      if (o.value === current) b.style.fontWeight = '650';
+      b.onclick = () => { closeMenu(); onPick(o.value); };
+      m.appendChild(b);
+    });
+    document.body.appendChild(m);
+    const r = anchor.getBoundingClientRect();
+    m.style.left = Math.min(r.left, window.innerWidth - m.offsetWidth - 8) + 'px';
+    m.style.top = (r.bottom + 6) + 'px';
+    openMenu = m;
+  }
+
+  /* ---------- 事件 ---------- */
+  function bindGlobal() {
+    $('#tabs').addEventListener('click', e => {
+      const b = e.target.closest('button[data-view]');
+      if (b) setView(b.dataset.view);
+    });
+    $('#search').addEventListener('input', e => { state.query = e.target.value; renderAll(); });
+    $('#reset').onclick = () => {
+      if (!confirm('重置为演示数据？当前改动会丢失。')) return;
+      localStorage.removeItem(KEY);
+      state.items = seed(); save(); renderAll();
+      showToast('已重置演示数据', null, null);
+    };
+    $('#scrim').onclick = closeDrawer;
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { closeMenu(); if (state.drawerId) closeDrawer(); }
+    });
+    document.addEventListener('click', e => {
+      if (openMenu && !openMenu.contains(e.target)) closeMenu();
+    });
+    ['#quickadd-table', '#quickadd-inbox'].forEach(sel => {
+      const el = $(sel);
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { quickAdd(el.value); el.value = ''; }
+      });
+    });
+
+    /* 表格：点击标题编辑、点芯片、点确认 */
+    const tb = $('#tbody');
+    tb.addEventListener('click', e => {
+      const tr = e.target.closest('tr[data-id]');
+      if (!tr) return;
+      const it = itemById(tr.dataset.id);
+      if (!it) return;
+      const chip = e.target.closest('[data-menu]');
+      if (chip) {
+        e.stopPropagation();
+        const f = chip.dataset.menu;
+        if (f === 'kind') showMenu(chip, KINDS.map(k => ({ value: k.id, label: k.label, color: chipColor(k.id) })), it.kind, v => mutate(it.id, { kind: v }, '人', '改类型'));
+        if (f === 'status') showMenu(chip, STATUSES.map(s => ({ value: s.id, label: s.label, color: s.color })), it.status, v => mutate(it.id, { status: v }, '人', '改状态'));
+        if (f === 'scope') showMenu(chip, [{ value: '', label: '（未定）' }].concat(SCOPES.map(s => ({ value: s, label: s }))), it.scope, v => mutate(it.id, { scope: v }, '人', '改范围'));
+        return;
+      }
+      const verify = e.target.closest('[data-verify]');
+      if (verify) { mutate(it.id, { verified: !it.verified }, '人', it.verified ? '取消确认' : '接受'); return; }
+      const titleCell = e.target.closest('[data-edit="title"]');
+      if (titleCell && !titleCell.querySelector('input')) { startTitleEdit(it, titleCell); return; }
+      if (!e.target.closest('input')) openDrawer(it.id);
+    });
+
+    /* 收件箱 */
+    $('#inbox-list').addEventListener('click', e => {
+      const row = e.target.closest('.inbox-item[data-id]');
+      if (!row) return;
+      const it = itemById(row.dataset.id);
+      if (!it) return;
+      if (e.target.closest('[data-accept]')) { mutate(it.id, { verified: true, status: 'todo' }, '人', '接受草稿'); return; }
+      if (e.target.closest('[data-return]')) { mutate(it.id, { verified: false, status: 'backlog' }, '人', '退回'); showToast('已退回，留在收件箱', null, null); return; }
+      if (e.target.closest('[data-drop]')) { archive(it.id); return; }
+      openDrawer(it.id);
+    });
+
+    /* 看板：拖拽 */
+    const board = $('#board');
+    board.addEventListener('dragstart', e => {
+      const card = e.target.closest('.card[data-id]');
+      if (!card) return;
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    board.addEventListener('dragover', e => {
+      const col = e.target.closest('.col');
+      if (!col) return;
+      e.preventDefault();
+      board.querySelectorAll('.col.over').forEach(c => c.classList.remove('over'));
+      col.classList.add('over');
+    });
+    board.addEventListener('dragleave', e => {
+      const col = e.target.closest('.col');
+      if (col && !col.contains(e.relatedTarget)) col.classList.remove('over');
+    });
+    board.addEventListener('drop', e => {
+      const col = e.target.closest('.col');
+      if (!col) return;
+      e.preventDefault();
+      const id = e.dataTransfer.getData('text/plain');
+      const it = itemById(id);
+      if (it && it.status !== col.dataset.status) mutate(id, { status: col.dataset.status }, '人', '拖拽流转');
+      board.querySelectorAll('.col.over').forEach(c => c.classList.remove('over'));
+    });
+    board.addEventListener('click', e => {
+      const card = e.target.closest('.card[data-id]');
+      if (card) openDrawer(card.dataset.id);
+    });
+  }
+
+  function startTitleEdit(it, cell) {
+    const old = it.title;
+    const input = document.createElement('input');
+    input.value = old;
+    cell.innerHTML = '';
+    cell.appendChild(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = () => {
+      if (done) return;
+      done = true;
+      const v = input.value.trim();
+      if (v && v !== old) mutate(it.id, { title: v }, '人', '改标题');
+      else renderAll();
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { done = true; renderAll(); }
+    });
+  }
+
+  /* ---------- 汇总 ---------- */
+  function renderCounts() {
+    const all = visible();
+    $('#cnt-inbox').textContent = all.filter(isDraft).length;
+    $('#cnt-board').textContent = all.length;
+    $('#cnt-table').textContent = all.length;
+  }
+
+  function renderAll() {
+    renderCounts();
+    renderTable();
+    renderBoard();
+    renderInbox();
+  }
+
+  /* ---------- 启动 ---------- */
+  load();
+  bindGlobal();
+  renderAll();
+})();
+</script>
+</body>
+</html>

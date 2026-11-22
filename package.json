@@ -1,0 +1,48 @@
+{
+  "name": "saibo_kanban",
+  "version": "0.2.0",
+  "description": "AI 与人共用的活看板：草稿进收件箱、人做分拣、字段级修订可回滚，零 token 纠错。",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "kanban",
+    "taskboard",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.2-rc.1"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./core": "./core.js",
+    "./store": "./store.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "core.js",
+    "store.js",
+    "tools.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "check": "node --check index.js && node --check core.js && node --check store.js && node --check tools.js",
+    "test": "node test/run.mjs"
+  }
+}
