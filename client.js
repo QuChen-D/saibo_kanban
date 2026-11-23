@@ -365,7 +365,7 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('conversation.view', () => ctx.slots.register({
           name: 'conversation.view',
           id: 'saibo-kanban',
-          order: 15,
+          order: -10,
           label: '看板'
         }, Panel));
       }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- 新增 xlsx 导入：`node bin/import.mjs --xlsx <文件> [--dry-run]`。
+  - 任务主表 → 归档历史条目（done）
+  - 长期滚动项 → 活跃条目（TODO→待办、PARTIAL/FIX→进行中、BLOCKED→受阻、暂缓→待规划）
+  - 节点说明 → 一条 design 资产
+- 零依赖 XLSX 读取器（`lib/xlsx.js`，只读 ZIP + sharedStrings，不装任何包）。
+- 看板 Tab 调到「对话」左边（order -10）。
+
 ## 0.3.1
 
 - 入口改到顶部视图导航（`conversation.view`），像记忆插件的「记忆 / 技能 / 待办」那样以 Tab 出现，不再占左侧导航。

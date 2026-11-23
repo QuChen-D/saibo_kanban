@@ -63,6 +63,15 @@ node bin/board.mjs show <id>
 node bin/board.mjs brief
 ```
 
+**导入 xlsx**
+
+```bash
+node bin/import.mjs --xlsx "C:\path\开发任务管理看板.xlsx" --dry-run   # 先看映射
+node bin/import.mjs --xlsx "C:\path\开发任务管理看板.xlsx"             # 真正写入
+```
+
+主表进归档（历史台账），长期滚动项进活跃列，节点说明合成一条 design 资产。
+
 ## 工具
 
 | 工具 | 作用 |
@@ -80,7 +89,7 @@ node bin/board.mjs brief
 - [x] 0.1.0 骨架
 - [x] 0.2.0 核心 + 工具
 - [x] 0.3.0 DSH 内页面（表格 / 看板 / 收件箱）+ 回滚
-- [ ] 0.4.0 xlsx 导入（列映射 + 预览 + 冲突报告）
+- [x] 0.4.0 xlsx 导入（列映射 + 预览 + 冲突报告）
 - [ ] 0.5.0 brief 注入与复用统计
 
 ## 开发
