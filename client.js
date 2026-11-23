@@ -218,8 +218,12 @@ window.__ModuleLoader__.load({
       const create = useCallback(title => {
         const t = title.trim();
         if (!t) return;
-        run(() => api('create', { title: t }), '已新建');
-      }, [run]);
+        run(() => api('create', {
+          title: t,
+          scope: fScope || '',
+          status: fStatus || 'backlog'
+        }), '已新建');
+      }, [run, fScope, fStatus]);
 
       const setStatus = useCallback((item, status) => {
         if (item.status === status) return;
