@@ -53,10 +53,9 @@ let imported = 0;
 let skipped = 0;
 const write = (item, note) => {
   if (existing.has(`${item.scope}|${item.title}`)) { skipped += 1; return; }
-  const created = store.record({
+  store.record({
     title: item.title, kind: item.kind, scope: item.scope, body: item.body, status: item.status
   }, { by: 'human', note });
-  if (item.archived) store.archive(created.id, { by: 'human', note: '导入历史台账' });
   existing.add(`${item.scope}|${item.title}`);
   imported += 1;
 };

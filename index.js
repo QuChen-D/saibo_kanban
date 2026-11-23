@@ -58,7 +58,7 @@ export function apply(ctx, config) {
 function dispatch(store, method, args) {
   switch (method) {
     case 'list': {
-      const result = store.list({ includeArchived: args.includeArchived === true, limit: 2000 });
+      const result = store.list({ limit: 2000 });
       return { items: result.items.map(publicItem), total: result.total };
     }
     case 'get': {
@@ -82,14 +82,6 @@ function dispatch(store, method, args) {
         note: args.note || '页面修改'
       });
       return { item: publicItem(result.item), changed: result.changed, changes: result.changes };
-    }
-    case 'archive': {
-      const result = store.archive(args.id, { by: 'human', note: '页面归档' });
-      return { item: publicItem(result.item) };
-    }
-    case 'restore': {
-      const result = store.restore(args.id, { by: 'human', note: '页面恢复' });
-      return { item: publicItem(result.item) };
     }
     case 'rollback': {
       const result = store.rollback(args.id, args.rev, { by: 'human', note: args.note || `回滚到 r${args.rev}` });
@@ -138,10 +130,9 @@ function applyPlan(store, plan) {
   let skipped = 0;
   const write = (item, note) => {
     if (existing.has(`${item.scope}|${item.title}`)) { skipped += 1; return; }
-    const created = store.record({
+    store.record({
       title: item.title, kind: item.kind, scope: item.scope, body: item.body, status: item.status
     }, { by: 'human', note });
-    if (item.archived) store.archive(created.id, { by: 'human', note: '导入历史台账' });
     existing.add(`${item.scope}|${item.title}`);
     imported += 1;
   };

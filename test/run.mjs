@@ -94,21 +94,22 @@ await ok('board_supersede 保留旧条目并指向新条目', async () => {
     err => err.code === 'SUPERSEDED');
 });
 
-await ok('board_merge 合并两条并归档来源', async () => {
+await ok('board_merge 合并两条并隐藏来源', async () => {
   const a = store.record({ title: '重复 A', kind: 'pitfall' }, { by: 'ai' });
   const b = store.record({ title: '重复 B', kind: 'pitfall' }, { by: 'ai' });
   const out = await call('board_merge', { ids: [a.id, b.id], title: '合并后的一条' });
   assert.equal(store.get(a.id).mergedInto, out.id);
-  assert.equal(store.get(a.id).archived, true);
-  assert.equal(store.get(b.id).archived, true);
-  assert.equal(store.get(out.id).verified, false);
+  assert.equal(store.get(b.id).mergedInto, out.id);
 });
 
-await ok('board_search 默认不含归档，includeArchived 可见', async () => {
-  const normal = await call('board_search', {});
-  assert.equal(normal.items.some(i => i.archived), false);
-  const all = await call('board_search', { includeArchived: true });
-  assert.equal(all.items.some(i => i.archived), true);
+await ok('合并后的来源不出现在列表', async () => {
+  const list = await call('board_search', {});
+  assert.equal(list.items.some(i => i.title === '重复 A'), false);
+});
+
+await ok('done 条目出现在列表（不再归档）', async () => {
+  const list = await call('board_search', { status: 'done' });
+  assert.ok(list.items.length >= 1);
 });
 
 await ok('重新加载后状态一致（JSONL 可重放）', async () => {

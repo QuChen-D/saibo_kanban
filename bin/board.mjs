@@ -5,12 +5,11 @@
  * 这是「人」的入口：0 token、本地直写台账。页面做好之前先用它，
  * 页面做好之后两者共用同一份 store 与规则。
  *
- *   saibo-board list [--status todo] [--scope 看板插件] [--all]
+ *   saibo-board list [--status todo] [--scope 看板插件]
  *   saibo-board inbox
  *   saibo-board add "标题" [--kind decision] [--scope 存储] [--body "正文"]
  *   saibo-board show <id>
  *   saibo-board accept <id> | unaccept <id>
- *   saibo-board archive <id> | restore <id>
  *   saibo-board update <id> [--title ...] [--status ...] [--kind ...] [--scope ...] [--body ...]
  *   saibo-board search <关键词>
  *   saibo-board brief [--scope ...]
@@ -70,14 +69,12 @@ function printItem(item) {
 function usage() {
   console.log(`赛博看板 CLI
 
-  list [--status <状态>] [--kind <类型>] [--scope <范围>] [--query <词>] [--all]
+  list [--status <状态>] [--kind <类型>] [--scope <范围>] [--query <词>]
   inbox
   add <标题> [--kind <类型>] [--scope <范围>] [--body <正文>]
   show <id>
   accept <id>       把条目标为已确认
   unaccept <id>     取消确认
-  archive <id>      归档（不删除）
-  restore <id>      撤销归档
   update <id> [--title ...] [--status ...] [--kind ...] [--scope ...] [--body ...]
   search <关键词>
   brief [--scope <范围>]
@@ -95,8 +92,7 @@ switch (command) {
       kind: flags.kind,
       scope: flags.scope,
       query: flags.query,
-      includeArchived: flags.all === true,
-      draft: flags.drafts === true ? true : undefined,
+      includeArchived: flags.all === true,      draft: flags.drafts === true ? true : undefined,
       limit: 200
     });
     if (result.items.length === 0) {
@@ -152,15 +148,6 @@ switch (command) {
     if (!id) { usage(); process.exitCode = 1; break; }
     store.setVerified(id, command === 'accept', { by: 'human' });
     console.log(`${id} → ${command === 'accept' ? '已确认' : '待确认'}`);
-    break;
-  }
-  case 'archive':
-  case 'restore': {
-    const id = positionals[0];
-    if (!id) { usage(); process.exitCode = 1; break; }
-    if (command === 'archive') store.archive(id, { by: 'human' });
-    else store.restore(id, { by: 'human' });
-    console.log(`${id} → ${command === 'archive' ? '已归档' : '已恢复'}`);
     break;
   }
   case 'update': {

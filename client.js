@@ -116,7 +116,6 @@ window.__ModuleLoader__.load({
     function Panel() {
       const [items, setItems] = useState([]);
       const [view, setView] = useState('table');
-      const [showArchived, setShowArchived] = useState(false);
       const [fStatus, setFStatus] = useState('');
       const [fKind, setFKind] = useState('');
       const [fScope, setFScope] = useState('');
@@ -144,11 +143,11 @@ window.__ModuleLoader__.load({
 
       const load = useCallback(async () => {
         try {
-          const r = await api('list', { includeArchived: showArchived });
+          const r = await api('list');
           setItems(r.items);
           setError('');
         } catch (e) { setError(e.message); }
-      }, [showArchived]);
+      }, []);
 
       useEffect(() => { load(); }, [load]);
 
@@ -230,10 +229,6 @@ window.__ModuleLoader__.load({
           className: 'sk-search', placeholder: '搜索标题 / 编号 / 范围',
           value: query, onChange: e => setQuery(e.target.value)
         }),
-        h('button', {
-          className: 'sk-btn' + (showArchived ? ' primary' : ''),
-          onClick: () => setShowArchived(v => !v)
-        }, showArchived ? '隐藏归档' : '显示归档'),
         h('button', { className: 'sk-btn', onClick: () => fileRef.current && fileRef.current.click() }, '导入 xlsx'),
         h('input', {
           ref: fileRef, type: 'file', accept: '.xlsx', style: { display: 'none' },
@@ -279,32 +274,23 @@ window.__ModuleLoader__.load({
             h('div', { className: 'sk-row sk-th' },
               h('span', { className: 'sk-num' }, '#'),
               h('span', { className: 'sk-name', style: { cursor: 'default' } }, '标题'),
-              h('span', { className: 'sk-col-k' }, '类型'),
-              h('span', { className: 'sk-col-s' }, '状态'),
-              h('span', { className: 'sk-col-sc' }, '范围'),
-              h('span', { className: 'sk-rev' }, '修订'),
-              h('span', { style: { width: 44 } }, '')
-            ),
-            h('div', { className: 'sk-row sk-filter' },
-              h('span', { className: 'sk-num' }, ''),
-              h('span', { className: 'sk-name' }, ''),
               h('select', {
                 className: 'sk-sel sk-col-k', value: fKind,
                 onChange: e => setFKind(e.target.value)
-              }, h('option', { value: '' }, '全部'), KINDS.map(k => h('option', { key: k.id, value: k.id }, k.label))),
+              }, h('option', { value: '' }, '类型'), KINDS.map(k => h('option', { key: k.id, value: k.id }, k.label))),
               h('select', {
                 className: 'sk-sel sk-col-s', value: fStatus,
                 onChange: e => setFStatus(e.target.value)
-              }, h('option', { value: '' }, '全部'), STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label))),
+              }, h('option', { value: '' }, '状态'), STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label))),
               h('select', {
                 className: 'sk-sel sk-col-sc', value: fScope,
                 onChange: e => setFScope(e.target.value)
-              }, h('option', { value: '' }, '全部'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
-              h('span', { className: 'sk-rev' }, ''),
+              }, h('option', { value: '' }, '范围'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
+              h('span', { className: 'sk-rev' }, '修订'),
               h('span', { style: { width: 44 } }, '')
             ),
             visible.length === 0 ? h('div', { className: 'sk-empty' }, '没有匹配的条目。跟 agent 说“记一条…”，或在上面的输入框快加。') :
-            shown.map((item, index) => h('div', { key: item.id, className: 'sk-row' + (item.archived ? ' arch' : '') },
+            shown.map((item, index) => h('div', { key: item.id, className: 'sk-row' },
               h('span', { className: 'sk-num' }, String(index + 1)),
               h('div', {
                 className: 'sk-name',
@@ -317,7 +303,7 @@ window.__ModuleLoader__.load({
                   if (e.key === 'Enter') e.currentTarget.blur();
                   if (e.key === 'Escape') setEditing(null);
                 }
-              }) : item.title, item.archived ? h('span', { className: 'sk-badge' }, '已归档') : null),
+              }) : item.title),
               h('select', {
                 className: 'sk-sel sk-col-k', value: item.kind,
                 onChange: e => update(item.id, item.rev, { kind: e.target.value })
@@ -427,16 +413,7 @@ window.__ModuleLoader__.load({
             h('select', {
               className: 'sk-sel', value: detail.item.scope || '',
               onChange: e => update(detail.item.id, detail.item.rev, { scope: e.target.value })
-            }, h('option', { value: '' }, '未定'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
-            detail.item.archived
-              ? h('button', {
-                className: 'sk-btn',
-                onClick: () => run(() => api('restore', { id: detail.item.id }), '已恢复').then(() => setDetail(null))
-              }, '恢复')
-              : h('button', {
-                className: 'sk-btn danger',
-                onClick: () => run(() => api('archive', { id: detail.item.id }), '已归档').then(() => setDetail(null))
-              }, '归档')
+            }, h('option', { value: '' }, '未定'), scopeOptions.map(s => h('option', { key: s, value: s }, s)))
           ),
           h('div', { className: 'sk-hist' },
             h('h4', null, '修订历史（点“回滚”回到那一版）'),
@@ -462,7 +439,7 @@ window.__ModuleLoader__.load({
           h('h3', null, '导入 ' + (imp.name || 'xlsx')),
           imp.error ? h('div', { className: 'hint', style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, imp.error) : null,
           imp.summary ? h('div', { className: 'sk-kv' },
-            h('span', null, '主表 ', h('b', null, String(imp.summary.main)), ' 条（归档）'),
+            h('span', null, '主表 ', h('b', null, String(imp.summary.main)), ' 条'),
             h('span', null, '滚动项 ', h('b', null, String(imp.summary.rolling)), ' 条（活跃）'),
             h('span', null, '节点说明 ', h('b', null, String(imp.summary.notes)), ' 条')
           ) : h('div', { className: 'hint' }, impBusy ? '解析中…' : ''),

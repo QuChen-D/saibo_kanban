@@ -255,7 +255,7 @@ export function createTools(store, options = {}) {
     },
     {
       name: 'board_search',
-      description: '检索看板条目：按关键词、状态、类型、范围过滤，返回紧凑列表（默认不含归档与历史修订）。',
+      description: '检索看板条目：按关键词、状态、类型、范围过滤，返回紧凑列表。',
       parameters: {
         type: 'object',
         properties: {
@@ -263,7 +263,6 @@ export function createTools(store, options = {}) {
           status: { type: 'string', enum: statusIds },
           kind: { type: 'string', enum: kindIds },
           scope: { type: 'string' },
-          includeArchived: { type: 'boolean', description: '是否包含已归档条目，默认 false' },
           limit: { type: 'number', description: '最多返回条数，默认 20，上限 200' }
         },
         additionalProperties: false
@@ -287,7 +286,6 @@ export function createTools(store, options = {}) {
           status: args.status,
           kind: args.kind,
           scope: args.scope,
-          includeArchived: args.includeArchived === true,
           limit: Math.min(Math.max(args.limit || 20, 1), 200)
         });
         return {

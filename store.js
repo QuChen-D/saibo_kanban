@@ -266,7 +266,7 @@ export class Store {
     const limit = Math.max(1, Math.min(options.limit ?? 50, 2000));
     const out = [];
     for (const item of this.items.values()) {
-      if (!options.includeArchived && item.archived) continue;
+      if (item.mergedInto) continue;
       if (options.status && item.status !== options.status) continue;
       if (options.kind && item.kind !== options.kind) continue;
       if (options.scope && item.scope !== options.scope) continue;
