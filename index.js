@@ -216,10 +216,10 @@ function resolveMessage(ctx, args) {
 
 /**
  * 从 from 往前找第一条有文字的助手消息。
- * 工具调用步骤没有文字，点它的「＋ 看板」时落到同一轮最后的答复上。
+ * 工具调用步骤没有文字，点它的「＋ 看板」时落到前面最近的答复上。
  */
 function pickTextMessage(messages, from) {
-  for (let i = from; i >= 0 && i >= from - 12; i -= 1) {
+  for (let i = from; i >= 0; i -= 1) {
     const message = messages[i];
     if (!message || message.role !== 'assistant') continue;
     const text = messageText(message);
