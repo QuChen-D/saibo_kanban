@@ -66,7 +66,8 @@ window.__ModuleLoader__.load({
       .sk-row:first-child { border-top:0; }
       .sk-row:hover { background:var(--dsw-alias-bg-layer-2,#fbfbfc); }
       .sk-id { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); width:86px; flex:none; }
-      .sk-name { flex:1; min-width:140px; cursor:text; border-radius:5px; padding:2px 4px; margin:-2px -4px; }
+      .sk-name { flex:1 1 34%; min-width:140px; cursor:text; border-radius:5px; padding:2px 4px; margin:-2px -4px; }
+      .sk-content { flex:1 1 40%; min-width:150px; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; padding:2px 4px; }
       .sk-name:hover { background:var(--dsw-alias-bg-layer-2,#f3f4f6); }
       .sk-name input { width:100%; border:1px solid var(--dsw-alias-brand-primary,#2563eb); border-radius:5px; padding:2px 4px; background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; font:inherit; outline:none; }
       .sk-sel { border:1px solid transparent; background:transparent; color:inherit; font:inherit; font-size:12px; border-radius:6px; padding:3px 4px; cursor:pointer; max-width:110px; }
@@ -85,7 +86,12 @@ window.__ModuleLoader__.load({
       .sk-col-head { display:flex; align-items:center; gap:6px; padding:9px 11px; font-weight:600; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); border-bottom:1px solid var(--dsw-alias-border-l1,#e6e7eb); }
       .sk-col-body { padding:7px; display:flex; flex-direction:column; gap:7px; min-height:70px; }
       .sk-col.over { outline:2px dashed var(--dsw-alias-brand-primary,#2563eb); outline-offset:-3px; }
-      .sk-card { background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:9px; padding:8px 10px; cursor:grab; }
+      .sk-card { background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:9px; padding:8px 10px; cursor:grab; position:relative; }
+      .sk-tip { display:none; position:absolute; left:0; top:calc(100% + 4px); width:300px; max-width:70vw; background:var(--dsw-alias-bg-overlay,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:8px; box-shadow:0 8px 24px rgba(16,24,40,.18); padding:8px 10px; z-index:20; cursor:default; }
+      .sk-card:hover .sk-tip { display:block; }
+      .sk-tip-title { font-weight:600; font-size:12.5px; }
+      .sk-tip-body { margin-top:4px; font-size:12px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:pre-wrap; max-height:160px; overflow:hidden; }
+      .sk-tip-meta { margin-top:6px; font-size:11px; color:var(--dsw-alias-label-secondary,#6b7280); }
       .sk-card .t { font-weight:550; line-height:1.4; font-size:13px; }
       .sk-card .m { margin-top:5px; display:flex; gap:6px; color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
       .sk-drawer { position:absolute; top:0; right:0; bottom:0; width:min(460px,92%); background:var(--dsw-alias-bg-layer-1,#fff); border-left:1px solid var(--dsw-alias-border-l1,#e6e7eb); box-shadow:-8px 0 24px rgba(16,24,40,.08); display:flex; flex-direction:column; z-index:5; }
@@ -274,6 +280,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'sk-row sk-th' },
               h('span', { className: 'sk-num' }, '#'),
               h('span', { className: 'sk-name', style: { cursor: 'default' } }, '标题'),
+              h('span', { className: 'sk-content', style: { cursor: 'default' } }, '内容'),
               h('select', {
                 className: 'sk-sel sk-col-k', value: fKind,
                 onChange: e => setFKind(e.target.value)
@@ -304,6 +311,11 @@ window.__ModuleLoader__.load({
                   if (e.key === 'Escape') setEditing(null);
                 }
               }) : item.title),
+              h('div', {
+                className: 'sk-content',
+                title: item.body || '',
+                onClick: () => openDetail(item.id)
+              }, item.body ? item.body.split('\n')[0] : '—'),
               h('select', {
                 className: 'sk-sel sk-col-k', value: item.kind,
                 onChange: e => update(item.id, item.rev, { kind: e.target.value })
@@ -356,6 +368,12 @@ window.__ModuleLoader__.load({
                   h('span', null, kindLabel(item.kind)),
                   h('span', null, item.scope || '未定范围'),
                   h('span', { style: { marginLeft: 'auto' } }, 'r' + item.rev)
+                ),
+                h('div', { className: 'sk-tip' },
+                  h('div', { className: 'sk-tip-title' }, item.title),
+                  h('div', { className: 'sk-tip-body' }, item.body || '（无内容）'),
+                  h('div', { className: 'sk-tip-meta' },
+                    statusLabel(item.status) + ' · ' + kindLabel(item.kind) + (item.scope ? ' · ' + item.scope : ''))
                 )))
               ));
             })
