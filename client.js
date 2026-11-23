@@ -23,6 +23,14 @@ window.__ModuleLoader__.load({
     const kindLabel = id => (KINDS.find(k => k.id === id) || { label: id }).label;
     const statusLabel = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
 
+    function displayContent(body) {
+      if (!body) return '—';
+      const meta = /^(编号|类型|优先级|滚动次数|首次来源|最近来源)：/;
+      const lines = String(body).split('\n').map(s => s.trim()).filter(Boolean);
+      const real = lines.filter(l => !meta.test(l));
+      return real[0] || '—';
+    }
+
     function toBase64(buf) {
       const bytes = new Uint8Array(buf);
       let s = '';
@@ -62,23 +70,24 @@ window.__ModuleLoader__.load({
       .sk-quick input { flex:1; border:0; outline:none; background:transparent; color:inherit; font:inherit; padding:4px; }
       .sk-quick .sk-k { color:var(--dsw-alias-label-secondary,#6b7280); font-size:12px; }
       .sk-panel { background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:10px; overflow:hidden; }
-      .sk-row { display:flex; align-items:center; gap:10px; padding:8px 12px; border-top:1px solid var(--dsw-alias-border-l1,#f0f1f4); }
+      .sk-row { display:flex; align-items:center; gap:8px; padding:6px 10px; border-top:1px solid var(--dsw-alias-border-l1,#f0f1f4); }
       .sk-row:first-child { border-top:0; }
       .sk-row:hover { background:var(--dsw-alias-bg-layer-2,#fbfbfc); }
       .sk-id { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); width:86px; flex:none; }
-      .sk-name { flex:1 1 34%; min-width:140px; cursor:text; border-radius:5px; padding:2px 4px; margin:-2px -4px; }
-      .sk-content { flex:1 1 40%; min-width:150px; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; padding:2px 4px; }
+      .sk-name { flex:0 0 260px; max-width:260px; cursor:text; border-radius:5px; padding:2px 4px; margin:-2px -4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .sk-content { flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; padding:2px 4px; }
       .sk-name:hover { background:var(--dsw-alias-bg-layer-2,#f3f4f6); }
       .sk-name input { width:100%; border:1px solid var(--dsw-alias-brand-primary,#2563eb); border-radius:5px; padding:2px 4px; background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; font:inherit; outline:none; }
       .sk-sel { border:1px solid transparent; background:transparent; color:inherit; font:inherit; font-size:12px; border-radius:6px; padding:3px 4px; cursor:pointer; max-width:110px; }
       .sk-sel:hover { border-color:var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); }
-      .sk-rev { width:44px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
-      .sk-num { width:34px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
+      .sk-rev { width:48px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
+      .sk-num { width:36px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
       .sk-th { background:var(--dsw-alias-bg-layer-2,#f7f8fa); font-size:11.5px; font-weight:600; color:var(--dsw-alias-label-secondary,#6b7280); position:sticky; top:0; z-index:1; }
       .sk-filter { background:var(--dsw-alias-bg-layer-2,#fbfbfc); border-bottom:1px solid var(--dsw-alias-border-l1,#e6e7eb); padding:4px 12px; gap:8px; }
-      .sk-col-k { width:76px; flex:none; }
-      .sk-col-s { width:92px; flex:none; }
-      .sk-col-sc { width:120px; flex:none; }
+      .sk-col-k { width:84px; flex:none; }
+      .sk-col-s { width:100px; flex:none; }
+      .sk-col-sc { width:140px; flex:none; }
+      .sk-detail-btn { white-space:nowrap; min-width:52px; padding:4px 8px; font-size:12px; }
       .sk-row.arch { opacity:.6; }
       .sk-badge { margin-left:6px; font-size:10.5px; color:var(--dsw-alias-label-secondary,#6b7280); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:999px; padding:0 6px; vertical-align:1px; }
       .sk-board { display:grid; grid-template-columns:repeat(6,minmax(160px,1fr)); gap:10px; align-items:start; }
@@ -294,7 +303,7 @@ window.__ModuleLoader__.load({
                 onChange: e => setFScope(e.target.value)
               }, h('option', { value: '' }, '范围'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
               h('span', { className: 'sk-rev' }, '修订'),
-              h('span', { style: { width: 44 } }, '')
+              h('span', { style: { width: 60 } }, '')
             ),
             visible.length === 0 ? h('div', { className: 'sk-empty' }, '没有匹配的条目。跟 agent 说“记一条…”，或在上面的输入框快加。') :
             shown.map((item, index) => h('div', { key: item.id, className: 'sk-row' },
@@ -315,7 +324,7 @@ window.__ModuleLoader__.load({
                 className: 'sk-content',
                 title: item.body || '',
                 onClick: () => openDetail(item.id)
-              }, item.body ? item.body.split('\n')[0] : '—'),
+              }, item.body ? displayContent(item.body) : '—'),
               h('select', {
                 className: 'sk-sel sk-col-k', value: item.kind,
                 onChange: e => update(item.id, item.rev, { kind: e.target.value })
@@ -329,7 +338,7 @@ window.__ModuleLoader__.load({
                 onChange: e => update(item.id, item.rev, { scope: e.target.value })
               }, h('option', { value: '' }, '未定'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
               h('span', { className: 'sk-rev' }, 'r' + item.rev),
-              h('button', { className: 'sk-btn', onClick: () => openDetail(item.id) }, '详情')
+              h('button', { className: 'sk-btn sk-detail-btn', onClick: () => openDetail(item.id) }, '详情')
             )),
             h('div', { ref: sentinelRef, style: { height: 1 } }),
             visible.length > shown.length ? h('div', { style: { padding: 10 } },
