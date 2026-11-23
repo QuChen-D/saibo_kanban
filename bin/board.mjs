@@ -13,6 +13,7 @@
  *   saibo-board update <id> [--title ...] [--status ...] [--kind ...] [--scope ...] [--body ...]
  *   saibo-board search <关键词>
  *   saibo-board brief [--scope ...]
+ *   saibo-board delete <id>
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -78,6 +79,7 @@ function usage() {
   update <id> [--title ...] [--status ...] [--kind ...] [--scope ...] [--body ...]
   search <关键词>
   brief [--scope <范围>]
+  delete <id>        物理删除（只在条目本身搞错了时用，不可恢复）
 
 数据目录：${dataDir()}
 `);
@@ -168,6 +170,14 @@ switch (command) {
     const result = store.list({ query, includeArchived: true, limit: 200 });
     if (result.items.length === 0) console.log('没有匹配的条目');
     else result.items.forEach(printItem);
+    break;
+  }
+  case 'delete': {
+    const id = positionals[0];
+    if (!id) { usage(); process.exitCode = 1; break; }
+    const result = store.remove(id, { by: 'human' });
+    console.log(`已物理删除「${result.title}」（${result.removed} 条修订）`);
+    if (result.repaired.length > 0) console.log(`已撤销指向它的引用：${result.repaired.join(', ')}`);
     break;
   }
   case 'brief': {

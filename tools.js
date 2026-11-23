@@ -1,8 +1,8 @@
 /**
- * tools.js — 暴露给模型的六个积木级工具。
+ * tools.js — 暴露给模型的积木级工具。
  *
  * 每个工具只做一件事；规则从 core/store 来，不在这里重复。
- * AI 的边界在 store 里执行：字段级 patch、不能写 done、不能物理删除。
+ * 物理删除只用于「这条本身搞错了」；不用了请改状态或用 board_supersede。
  */
 import { DEFAULT_KINDS, STATUSES, BoardError } from './core.js';
 
@@ -251,6 +251,34 @@ export function createTools(store, options = {}) {
           note: args.note || `AI 回滚到 r${args.rev}`
         });
         return { id: result.item.id, rev: result.item.rev };
+      })
+    },
+    {
+      name: 'board_delete',
+      description: '物理删除一条「本身搞错了」的条目（写错、重复）。所有修订会从文件里删掉，不能回滚。只是不用了，请不要删：改状态或用 board_supersede 取代。',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '要删除的条目 id' }
+        },
+        required: ['id'],
+        additionalProperties: false
+      },
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            removed: { type: 'number' },
+            repaired: { type: 'array', items: { type: 'string' } }
+          },
+          required: ['id', 'removed', 'repaired']
+        },
+        render: (_args, value) => text(`已物理删除 ${value.id}（${value.removed} 条修订）`)
+      },
+      execute: wrap(async args => {
+        const result = store.remove(args.id, { by: 'ai' });
+        return { id: result.id, removed: result.removed, repaired: result.repaired };
       })
     },
     {

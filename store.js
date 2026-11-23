@@ -262,6 +262,70 @@ export class Store {
     return { item: next, changed: true };
   }
 
+  /**
+   * 物理删除：把这条目的所有修订行从文件里抹掉，并从内存移除。
+   * 只用于「这条本身搞错了」（写错、重复）；只是不用了，请改状态或用 supersede。
+   * 删除不可回滚；指向它的 supersededBy / mergedInto 会被清掉，不留死链。
+   */
+  remove(id, context = {}) {
+    const current = this.get(id);
+    if (!fs.existsSync(this.file)) throw new BoardError('NOT_FOUND', `没有找到条目 ${id}`);
+    const raw = fs.readFileSync(this.file, 'utf8');
+    const kept = [];
+    let removed = 0;
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let event = null;
+      try { event = JSON.parse(line); } catch { kept.push(line); continue; }
+      if (event && event.id === id) { removed += 1; continue; }
+      kept.push(line);
+    }
+    if (removed === 0) throw new BoardError('NOT_FOUND', `文件里没有条目 ${id} 的记录`);
+    const tmp = `${this.file}.tmp-${process.pid}-${Date.now()}`;
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeFileSync(fd, kept.length > 0 ? kept.join('\n') + '\n' : '');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, this.file);
+    this.items.delete(id);
+    this.events -= removed;
+    const repaired = this.repairReferences(id, context);
+    return { id, title: current.title, removed, repaired };
+  }
+
+  /** 条目被删除后，清掉别的条目里指向它的引用。 */
+  repairReferences(id, context = {}) {
+    const by = context.by === 'human' ? 'human' : 'ai';
+    const now = new Date().toISOString();
+    const repaired = [];
+    for (const item of [...this.items.values()]) {
+      const patch = {};
+      const changes = {};
+      if (item.supersededBy === id) {
+        patch.supersededBy = null;
+        changes.supersededBy = { from: id, to: '' };
+      }
+      if (item.mergedInto === id) {
+        patch.mergedInto = null;
+        patch.archived = false;
+        changes.mergedInto = { from: id, to: '' };
+        changes.archived = { from: 'true', to: 'false' };
+      }
+      if (Object.keys(changes).length === 0) continue;
+      const next = { ...item, ...patch, rev: item.rev + 1, updatedAt: now };
+      this.append({
+        v: SCHEMA_VERSION, id: item.id, rev: next.rev, time: now, by,
+        note: `指向的条目 ${id} 已删除，撤销引用`,
+        changes, item: next
+      });
+      repaired.push(item.id);
+    }
+    return repaired;
+  }
+
   list(options = {}) {
     const limit = Math.max(1, Math.min(options.limit ?? 50, 2000));
     const out = [];

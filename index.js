@@ -110,6 +110,10 @@ function dispatch(ctx, store, method, args) {
       const result = store.rollback(args.id, args.rev, { by: 'human', note: args.note || `回滚到 r${args.rev}` });
       return { item: publicItem(result.item) };
     }
+    case 'delete': {
+      const result = store.remove(args.id, { by: 'human' });
+      return { id: result.id, title: result.title, removed: result.removed, repaired: result.repaired };
+    }
     case 'brief': {
       return { markdown: store.brief({}) };
     }

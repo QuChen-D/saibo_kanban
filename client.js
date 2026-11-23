@@ -147,6 +147,7 @@ window.__ModuleLoader__.load({
       const [imp, setImp] = useState(null);
       const [impBusy, setImpBusy] = useState(false);
       const [impError, setImpError] = useState('');
+      const [del, setDel] = useState(null);
       const fileRef = useRef(null);
       const toastTimer = useRef(null);
 
@@ -307,7 +308,7 @@ window.__ModuleLoader__.load({
                 onChange: e => setFScope(e.target.value)
               }, h('option', { value: '' }, '范围'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
               h('span', { className: 'sk-rev' }, '修订'),
-              h('span', { style: { width: 60 } }, '')
+              h('span', { style: { width: 112 } }, '')
             ),
             visible.length === 0 ? h('div', { className: 'sk-empty' }, '没有匹配的条目。跟 agent 说“记一条…”，或在上面的输入框快加。') :
             shown.map((item, index) => h('div', { key: item.id, className: 'sk-row' },
@@ -342,7 +343,14 @@ window.__ModuleLoader__.load({
                 onChange: e => update(item.id, item.rev, { scope: e.target.value })
               }, h('option', { value: '' }, '未定'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
               h('span', { className: 'sk-rev' }, 'r' + item.rev),
-              h('button', { className: 'sk-btn sk-detail-btn', onClick: () => openDetail(item.id) }, '详情')
+              h('div', { style: { display: 'flex', gap: 4, flex: '0 0 auto' } },
+                h('button', { className: 'sk-btn sk-detail-btn', onClick: () => openDetail(item.id) }, '详情'),
+                h('button', {
+                  className: 'sk-btn sk-detail-btn danger',
+                  title: '物理删除（只在条目本身搞错了时用，删了不能恢复）',
+                  onClick: () => setDel(item)
+                }, '删')
+              )
             )),
             h('div', { ref: sentinelRef, style: { height: 1 } }),
             visible.length > shown.length ? h('div', { style: { padding: 10 } },
@@ -461,6 +469,29 @@ window.__ModuleLoader__.load({
                   .catch(e => setError(e.message))
               }, '回滚')
             ))
+          ),
+          h('div', { style: { display: 'flex', justifyContent: 'flex-end', paddingTop: 10, borderTop: '1px solid var(--dsw-alias-border-l1,#e6e7eb)' } },
+            h('button', { className: 'sk-btn danger', onClick: () => setDel(detail.item) }, '删除这条'))
+        )
+      ) : null;
+
+      const deleteDialog = del ? h('div', { className: 'sk-modal' },
+        h('div', { className: 'sk-dialog' },
+          h('h3', null, '删除这条？'),
+          h('div', { className: 'sk-kv' }, h('span', null, del.title)),
+          h('div', { className: 'hint' }, '物理删除：这条的所有修订会从 records.jsonl 里一起删掉，不能恢复。只在这条本身搞错了（写错、重复）时用；只是不用了，请改状态或用取代。'),
+          h('div', { className: 'row' },
+            h('button', { className: 'sk-btn', onClick: () => setDel(null) }, '取消'),
+            h('button', {
+              className: 'sk-btn danger',
+              disabled: busy,
+              onClick: async () => {
+                const target = del;
+                setDel(null);
+                if (detail && detail.item.id === target.id) setDetail(null);
+                await run(() => api('delete', { id: target.id }), '已删除「' + target.title + '」');
+              }
+            }, '删除')
           )
         )
       ) : null;
@@ -499,6 +530,7 @@ window.__ModuleLoader__.load({
         head,
         h('div', { className: 'sk-body' }, error ? h('div', { className: 'sk-empty', style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, error) : content),
         importDialog,
+        deleteDialog,
         drawer,
         toast ? h('div', { className: 'sk-toast' }, toast) : null
       );

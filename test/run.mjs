@@ -196,6 +196,39 @@ await ok('落板：新建 → 重复算已存在 → 状态变了就更新', asy
   assert.equal(store.get(third.updated[0].id).status, 'done');
 });
 
+await ok('物理删除：记录从文件里消失，内存里也查不到', async () => {
+  const it = store.record({ title: '误加的条目', kind: 'task' }, { by: 'ai' });
+  store.update(it.id, { body: '错的内容' }, { by: 'ai', expectedRev: it.rev });
+  const out = await call('board_delete', { id: it.id });
+  assert.equal(out.removed, 2);
+  assert.throws(() => store.get(it.id), err => err.code === 'NOT_FOUND');
+  const raw = fs.readFileSync(path.join(dir, 'records.jsonl'), 'utf8');
+  assert.equal(raw.includes(it.id), false);
+  const reloaded = new Store({ dataDir: dir, kinds }).load();
+  assert.equal(reloaded.items.has(it.id), false);
+  assert.equal(reloaded.badLines, 0);
+});
+
+await ok('删掉被取代的目标：旧条目的指向自动撤销', async () => {
+  const oldItem = store.record({ title: '旧结论待撤', kind: 'decision' }, { by: 'ai' });
+  const sup = await call('board_supersede', { id: oldItem.id, expectedRev: oldItem.rev, title: '新结论待撤' });
+  await call('board_delete', { id: sup.newId });
+  const after = store.get(oldItem.id);
+  assert.equal(after.supersededBy, null);
+});
+
+await ok('删掉合并目标：来源条目恢复可见', async () => {
+  const a = store.record({ title: '合并来源甲', kind: 'pitfall' }, { by: 'ai' });
+  const b = store.record({ title: '合并来源乙', kind: 'pitfall' }, { by: 'ai' });
+  const merged = await call('board_merge', { ids: [a.id, b.id], title: '会被删的合并结果' });
+  await call('board_delete', { id: merged.id });
+  const list = await call('board_search', { query: '合并来源' });
+  assert.equal(list.items.length, 2);
+  assert.equal(store.get(a.id).mergedInto, null);
+  const lines = fs.readFileSync(path.join(dir, 'records.jsonl'), 'utf8').trim().split('\n').length;
+  assert.equal(lines, store.events);
+});
+
 console.log(`\n全部通过：${passed} 项`);
 console.log('样例档案：');
 console.log(fs.readFileSync(path.join(dir, 'records.jsonl'), 'utf8').split('\n').slice(0, 2).join('\n'));
