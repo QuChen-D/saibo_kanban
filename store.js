@@ -263,7 +263,7 @@ export class Store {
   }
 
   list(options = {}) {
-    const limit = Math.max(1, Math.min(options.limit ?? 50, 200));
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 2000));
     const out = [];
     for (const item of this.items.values()) {
       if (!options.includeArchived && item.archived) continue;

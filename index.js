@@ -58,7 +58,7 @@ export function apply(ctx, config) {
 function dispatch(store, method, args) {
   switch (method) {
     case 'list': {
-      const result = store.list({ includeArchived: args.includeArchived === true, limit: 500 });
+      const result = store.list({ includeArchived: args.includeArchived === true, limit: 2000 });
       return { items: result.items.map(publicItem), total: result.total };
     }
     case 'get': {
@@ -147,7 +147,7 @@ function applyPlan(store, plan) {
   };
   for (const item of plan.main) write(item, '导入：任务主表');
   for (const item of plan.rolling) write(item, '导入：长期滚动项');
-  if (plan.notes) write(plan.notes, '导入：节点说明');
+  if (plan.notes && args.includeNotes === true) write(plan.notes, '导入：节点说明');
   return { imported, skipped, summary: describeImport(plan) };
 }
 

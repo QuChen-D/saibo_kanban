@@ -74,6 +74,7 @@ window.__ModuleLoader__.load({
       .sk-rev { width:44px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
       .sk-num { width:34px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
       .sk-th { background:var(--dsw-alias-bg-layer-2,#f7f8fa); font-size:11.5px; font-weight:600; color:var(--dsw-alias-label-secondary,#6b7280); position:sticky; top:0; z-index:1; }
+      .sk-filter { background:var(--dsw-alias-bg-layer-2,#fbfbfc); border-bottom:1px solid var(--dsw-alias-border-l1,#e6e7eb); padding:4px 12px; gap:8px; }
       .sk-col-k { width:76px; flex:none; }
       .sk-col-s { width:92px; flex:none; }
       .sk-col-sc { width:120px; flex:none; }
@@ -116,6 +117,11 @@ window.__ModuleLoader__.load({
       const [items, setItems] = useState([]);
       const [view, setView] = useState('table');
       const [showArchived, setShowArchived] = useState(false);
+      const [fStatus, setFStatus] = useState('');
+      const [fKind, setFKind] = useState('');
+      const [fScope, setFScope] = useState('');
+      const [visibleCount, setVisibleCount] = useState(100);
+      const sentinelRef = useRef(null);
       const [query, setQuery] = useState('');
       const [error, setError] = useState('');
       const [detail, setDetail] = useState(null);
@@ -155,9 +161,35 @@ window.__ModuleLoader__.load({
 
       const visible = useMemo(() => {
         const q = query.trim().toLowerCase();
-        if (!q) return items;
-        return items.filter(i => (i.title + ' ' + i.id + ' ' + (i.scope || '')).toLowerCase().includes(q));
-      }, [items, query]);
+        return items.filter(i => {
+          if (fStatus && i.status !== fStatus) return false;
+          if (fKind && i.kind !== fKind) return false;
+          if (fScope && (i.scope || '') !== fScope) return false;
+          if (!q) return true;
+          return (i.title + ' ' + (i.scope || '') + ' ' + i.id).toLowerCase().includes(q);
+        });
+      }, [items, query, fStatus, fKind, fScope]);
+
+      const scopeOptions = useMemo(() => {
+        const set = new Set();
+        for (const i of items) if (i.scope) set.add(i.scope);
+        return [...set].sort();
+      }, [items]);
+
+      useEffect(() => { setVisibleCount(100); }, [query, fStatus, fKind, fScope, view]);
+
+      useEffect(() => {
+        if (view !== 'table') return undefined;
+        const el = sentinelRef.current;
+        if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+        const io = new IntersectionObserver(entries => {
+          if (entries.some(e => e.isIntersecting)) {
+            setVisibleCount(c => Math.min(c + 100, visible.length));
+          }
+        });
+        io.observe(el);
+        return () => io.disconnect();
+      }, [view, visible.length, visibleCount]);
 
       const openDetail = useCallback(async id => {
         try { setDetail(await api('get', { id })); }
@@ -232,12 +264,20 @@ window.__ModuleLoader__.load({
 
       let content = null;
       if (view === 'table') {
+        const shown = visible.slice(0, visibleCount);
         content = h('div', null,
-          quick,
+          h('div', { className: 'sk-quick' },
+            h('span', { className: 'sk-k' }, '＋'),
+            h('input', {
+              placeholder: '快加一条（回车新建）',
+              onKeyDown: e => { if (e.key === 'Enter') { create(e.currentTarget.value); e.currentTarget.value = ''; } }
+            }),
+            h('span', { style: { color: 'var(--dsw-alias-label-secondary,#6b7280)', fontSize: 12, whiteSpace: 'nowrap' } },
+              '共 ' + visible.length + ' 条' + (visible.length > shown.length ? ' · 已显示 ' + shown.length : ''))
+          ),
           h('div', { className: 'sk-panel' },
             h('div', { className: 'sk-row sk-th' },
               h('span', { className: 'sk-num' }, '#'),
-              h('span', { className: 'sk-id' }, '编号'),
               h('span', { className: 'sk-name', style: { cursor: 'default' } }, '标题'),
               h('span', { className: 'sk-col-k' }, '类型'),
               h('span', { className: 'sk-col-s' }, '状态'),
@@ -245,10 +285,27 @@ window.__ModuleLoader__.load({
               h('span', { className: 'sk-rev' }, '修订'),
               h('span', { style: { width: 44 } }, '')
             ),
-            visible.length === 0 ? h('div', { className: 'sk-empty' }, '还没有条目。跟 agent 说“记一条…”，或在上面的输入框快加。') :
-            visible.map((item, index) => h('div', { key: item.id, className: 'sk-row' + (item.archived ? ' arch' : '') },
+            h('div', { className: 'sk-row sk-filter' },
+              h('span', { className: 'sk-num' }, ''),
+              h('span', { className: 'sk-name' }, ''),
+              h('select', {
+                className: 'sk-sel sk-col-k', value: fKind,
+                onChange: e => setFKind(e.target.value)
+              }, h('option', { value: '' }, '全部'), KINDS.map(k => h('option', { key: k.id, value: k.id }, k.label))),
+              h('select', {
+                className: 'sk-sel sk-col-s', value: fStatus,
+                onChange: e => setFStatus(e.target.value)
+              }, h('option', { value: '' }, '全部'), STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label))),
+              h('select', {
+                className: 'sk-sel sk-col-sc', value: fScope,
+                onChange: e => setFScope(e.target.value)
+              }, h('option', { value: '' }, '全部'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
+              h('span', { className: 'sk-rev' }, ''),
+              h('span', { style: { width: 44 } }, '')
+            ),
+            visible.length === 0 ? h('div', { className: 'sk-empty' }, '没有匹配的条目。跟 agent 说“记一条…”，或在上面的输入框快加。') :
+            shown.map((item, index) => h('div', { key: item.id, className: 'sk-row' + (item.archived ? ' arch' : '') },
               h('span', { className: 'sk-num' }, String(index + 1)),
-              h('span', { className: 'sk-id' }, item.id),
               h('div', {
                 className: 'sk-name',
                 onClick: () => { setEditing(item.id); setDraft(item.title); }
@@ -272,10 +329,14 @@ window.__ModuleLoader__.load({
               h('select', {
                 className: 'sk-sel sk-col-sc', value: item.scope || '',
                 onChange: e => update(item.id, item.rev, { scope: e.target.value })
-              }, h('option', { value: '' }, '范围'), SCOPES.map(s => h('option', { key: s, value: s }, s))),
+              }, h('option', { value: '' }, '未定'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
               h('span', { className: 'sk-rev' }, 'r' + item.rev),
               h('button', { className: 'sk-btn', onClick: () => openDetail(item.id) }, '详情')
-            ))
+            )),
+            h('div', { ref: sentinelRef, style: { height: 1 } }),
+            visible.length > shown.length ? h('div', { style: { padding: 10 } },
+              h('button', { className: 'sk-btn', onClick: () => setVisibleCount(c => c + 100) },
+                '加载更多（' + shown.length + ' / ' + visible.length + '）')) : null
           )
         );
       } else if (view === 'board') {
@@ -321,7 +382,6 @@ window.__ModuleLoader__.load({
           h('div', { className: 'sk-panel' },
             recent.length === 0 ? h('div', { className: 'sk-empty' }, '还没有条目。') :
             recent.map(item => h('div', { key: item.id, className: 'sk-row' },
-              h('span', { className: 'sk-id' }, item.id),
               h('span', { style: { flex: 1, fontWeight: 550 } }, item.title),
               h('span', { style: { color: 'var(--dsw-alias-label-secondary,#6b7280)', fontSize: 12 } },
                 statusLabel(item.status) + ' · ' + kindLabel(item.kind) + (item.scope ? ' · ' + item.scope : '')),
@@ -334,7 +394,6 @@ window.__ModuleLoader__.load({
 
       const drawer = detail ? h('div', { className: 'sk-drawer' },
         h('div', { className: 'sk-drawer-head' },
-          h('span', { className: 'sk-id' }, detail.item.id),
           h('span', { style: { fontWeight: 600, flex: 1 } }, '条目详情'),
           h('button', { className: 'sk-btn', onClick: () => setDetail(null) }, '关闭')
         ),
@@ -368,7 +427,7 @@ window.__ModuleLoader__.load({
             h('select', {
               className: 'sk-sel', value: detail.item.scope || '',
               onChange: e => update(detail.item.id, detail.item.rev, { scope: e.target.value })
-            }, h('option', { value: '' }, '范围'), SCOPES.map(s => h('option', { key: s, value: s }, s))),
+            }, h('option', { value: '' }, '未定'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
             detail.item.archived
               ? h('button', {
                 className: 'sk-btn',

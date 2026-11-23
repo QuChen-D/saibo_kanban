@@ -62,5 +62,5 @@ const write = (item, note) => {
 };
 for (const item of plan.main) write(item, '导入：任务主表');
 for (const item of plan.rolling) write(item, '导入：长期滚动项');
-if (plan.notes) write(plan.notes, '导入：节点说明');
+if (plan.notes && flags['include-notes'] === true) write(plan.notes, '导入：节点说明');
 console.log(`\n已导入 ${imported} 条，跳过重复 ${skipped} 条 → ${path.join(dataDir, 'records.jsonl')}`);
