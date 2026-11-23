@@ -8,6 +8,8 @@
 import { Store, defaultDataDir } from './store.js';
 import { createTools } from './tools.js';
 import { normalizeKinds } from './core.js';
+import { readXlsxBuffer } from './lib/xlsx.js';
+import { buildImport, describeImport } from './lib/import-map.js';
 
 export const inject = ['tools', 'webServer'];
 
@@ -96,6 +98,14 @@ function dispatch(store, method, args) {
     case 'brief': {
       return { markdown: store.brief({}) };
     }
+    case 'import.preview': {
+      const plan = buildImport(readXlsxBuffer(decodeData(args.data)));
+      return { summary: describeImport(plan) };
+    }
+    case 'import.apply': {
+      const plan = buildImport(readXlsxBuffer(decodeData(args.data)));
+      return applyPlan(store, plan);
+    }
     default:
       throw new Error(`未知方法: ${method}`);
   }
@@ -115,6 +125,30 @@ function publicItem(item) {
     supersededBy: item.supersededBy,
     mergedInto: item.mergedInto
   };
+}
+
+function decodeData(data) {
+  if (typeof data !== 'string' || data.length < 16) throw new Error('没有收到文件内容');
+  return Buffer.from(data, 'base64');
+}
+
+function applyPlan(store, plan) {
+  const existing = new Set([...store.items.values()].map(i => `${i.scope}|${i.title}`));
+  let imported = 0;
+  let skipped = 0;
+  const write = (item, note) => {
+    if (existing.has(`${item.scope}|${item.title}`)) { skipped += 1; return; }
+    const created = store.record({
+      title: item.title, kind: item.kind, scope: item.scope, body: item.body, status: item.status
+    }, { by: 'human', note });
+    if (item.archived) store.archive(created.id, { by: 'human', note: '导入历史台账' });
+    existing.add(`${item.scope}|${item.title}`);
+    imported += 1;
+  };
+  for (const item of plan.main) write(item, '导入：任务主表');
+  for (const item of plan.rolling) write(item, '导入：长期滚动项');
+  if (plan.notes) write(plan.notes, '导入：节点说明');
+  return { imported, skipped, summary: describeImport(plan) };
 }
 
 function readJsonBody(req) {

@@ -63,14 +63,18 @@ node bin/board.mjs show <id>
 node bin/board.mjs brief
 ```
 
-**导入 xlsx**
+**页面导入（推荐）**
+
+看板面板 → 右上角「导入 xlsx」→ 选择文件 → 看预览（主表 / 滚动项 / 节点说明各多少条）→ 确认导入。
+
+**命令行导入**
 
 ```bash
-node bin/import.mjs --xlsx "C:\path\开发任务管理看板.xlsx" --dry-run   # 先看映射
-node bin/import.mjs --xlsx "C:\path\开发任务管理看板.xlsx"             # 真正写入
+node bin/import.mjs --xlsx "C:\path\开发任务管理看板.xlsx" --dry-run
+node bin/import.mjs --xlsx "C:\path\开发任务管理看板.xlsx"
 ```
 
-主表进归档（历史台账），长期滚动项进活跃列，节点说明合成一条 design 资产。
+主表进归档（历史台账），长期滚动项进活跃列，节点说明合成一条 design 资产；重复条目按「范围 + 标题」跳过。
 
 ## 工具
 

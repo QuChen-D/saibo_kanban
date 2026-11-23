@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- 导入改为页面操作：看板面板 → 「导入 xlsx」→ 选文件 → 预览数量 → 确认导入。
+- 导入映射抽到 `lib/import-map.js`，页面与 CLI 共用；导入按「范围 + 标题」去重。
+
 ## 0.4.0
 
 - 新增 xlsx 导入：`node bin/import.mjs --xlsx <文件> [--dry-run]`。

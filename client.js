@@ -23,8 +23,17 @@ window.__ModuleLoader__.load({
     const kindLabel = id => (KINDS.find(k => k.id === id) || { label: id }).label;
     const statusLabel = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
 
-    async function api(method, args) {
-      const res = await fetch('/saibo-kanban/api', {
+    function toBase64(buf) {
+      const bytes = new Uint8Array(buf);
+      let s = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      return btoa(s);
+    }
+
+    async function api(method, args) {      const res = await fetch('/saibo-kanban/api', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ method, args: args || {} })
@@ -86,6 +95,14 @@ window.__ModuleLoader__.load({
       .sk-toast { position:absolute; left:50%; bottom:18px; transform:translateX(-50%); background:var(--dsw-alias-label-primary,#17181a); color:var(--dsw-alias-bg-base,#fff); padding:8px 14px; border-radius:9px; font-size:12.5px; z-index:9; }
       .sk-empty { padding:40px; text-align:center; color:var(--dsw-alias-label-secondary,#6b7280); }
       .sk-rail { display:flex; align-items:center; justify-content:center; }
+      .sk-modal { position:absolute; inset:0; background:rgba(15,18,25,.35); display:flex; align-items:center; justify-content:center; z-index:8; }
+      .sk-dialog { width:min(520px,92%); background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:12px; box-shadow:0 18px 48px rgba(16,24,40,.22); padding:16px; display:flex; flex-direction:column; gap:10px; }
+      .sk-dialog h3 { margin:0; font-size:15px; }
+      .sk-dialog .hint { color:var(--dsw-alias-label-secondary,#6b7280); font-size:12px; line-height:1.6; }
+      .sk-dialog .row { display:flex; gap:8px; justify-content:flex-end; }
+      .sk-dialog input[type=file] { font:inherit; font-size:12.5px; }
+      .sk-kv { display:flex; gap:12px; flex-wrap:wrap; font-size:12.5px; }
+      .sk-kv b { font-weight:650; }
     `;
 
     function Panel() {
@@ -99,6 +116,10 @@ window.__ModuleLoader__.load({
       const [overCol, setOverCol] = useState(null);
       const [toast, setToast] = useState('');
       const [busy, setBusy] = useState(false);
+      const [imp, setImp] = useState(null);
+      const [impBusy, setImpBusy] = useState(false);
+      const [impError, setImpError] = useState('');
+      const fileRef = useRef(null);
       const toastTimer = useRef(null);
 
       const say = useCallback(msg => {
@@ -168,6 +189,24 @@ window.__ModuleLoader__.load({
         h('input', {
           className: 'sk-search', placeholder: '搜索标题 / 编号 / 范围',
           value: query, onChange: e => setQuery(e.target.value)
+        }),
+        h('button', { className: 'sk-btn', onClick: () => fileRef.current && fileRef.current.click() }, '导入 xlsx'),
+        h('input', {
+          ref: fileRef, type: 'file', accept: '.xlsx', style: { display: 'none' },
+          onChange: async e => {
+            const file = e.target.files && e.target.files[0];
+            e.target.value = '';
+            if (!file) return;
+            setImpBusy(true); setImpError('');
+            try {
+              const buf = await file.arrayBuffer();
+              const data = toBase64(buf);
+              const r = await api('import.preview', { data });
+              setImp({ name: file.name, data, summary: r.summary });
+            } catch (err) {
+              setImp({ name: file.name, data: null, summary: null, error: err.message });
+            } finally { setImpBusy(false); }
+          }
         })
       );
 
@@ -331,10 +370,40 @@ window.__ModuleLoader__.load({
         )
       ) : null;
 
+      const importDialog = imp ? h('div', { className: 'sk-modal' },
+        h('div', { className: 'sk-dialog' },
+          h('h3', null, '导入 ' + (imp.name || 'xlsx')),
+          imp.error ? h('div', { className: 'hint', style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, imp.error) : null,
+          imp.summary ? h('div', { className: 'sk-kv' },
+            h('span', null, '主表 ', h('b', null, String(imp.summary.main)), ' 条（归档）'),
+            h('span', null, '滚动项 ', h('b', null, String(imp.summary.rolling)), ' 条（活跃）'),
+            h('span', null, '节点说明 ', h('b', null, String(imp.summary.notes)), ' 条')
+          ) : h('div', { className: 'hint' }, impBusy ? '解析中…' : ''),
+          imp.summary ? h('div', { className: 'hint' },
+            Object.entries(imp.summary.byStatus || {}).map(([k, v]) => k + ' ' + v).join(' · ')) : null,
+          h('div', { className: 'row' },
+            h('button', { className: 'sk-btn', onClick: () => { setImp(null); setImpError(''); } }, '取消'),
+            imp.summary ? h('button', {
+              className: 'sk-btn primary',
+              onClick: async () => {
+                setImpBusy(true); setImpError('');
+                try {
+                  const r = await api('import.apply', { data: imp.data });
+                  setImp(null); await load();
+                  say('已导入 ' + r.imported + ' 条，跳过重复 ' + r.skipped + ' 条');
+                } catch (err) { setImpError(err.message); }
+                finally { setImpBusy(false); }
+              }
+            }, impBusy ? '导入中…' : '确认导入') : null
+          )
+        )
+      ) : null;
+
       return h('div', { className: 'sk', style: { position: 'relative' } },
         h('style', null, CSS),
         head,
         h('div', { className: 'sk-body' }, error ? h('div', { className: 'sk-empty', style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, error) : content),
+        importDialog,
         drawer,
         toast ? h('div', { className: 'sk-toast' }, toast) : null
       );
