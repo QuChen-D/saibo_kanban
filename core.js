@@ -81,14 +81,12 @@ export function assertTitle(title) {
   return title.trim();
 }
 
-/** 检查一次状态流转；权限对等，AI 与人同一套规则。 */
+/**
+ * 校验状态值。任意状态之间可以互转（回滚兜底），只拒绝未知状态。
+ */
 export function assertTransition(from, to) {
   if (from === to) return;
   assertStatus(to);
-  const allowed = TRANSITIONS[from] || [];
-  if (!allowed.includes(to)) {
-    throw new BoardError('INVALID_TRANSITION', `状态不能从 ${from} 直接变成 ${to}`);
-  }
 }
 
 export function nextId() {

@@ -75,12 +75,10 @@ await ok('board_rollback 回到旧修订（历史保留）', async () => {
   assert.ok(hist.length >= 3);
 });
 
-await ok('状态流转非法时拒绝（backlog → in_review）', async () => {
+await ok('任意状态可互转（todo → done）', async () => {
   const cur = store.record({ title: '测试流转', kind: 'task' }, { by: 'ai' });
-  assert.throws(
-    () => store.update(cur.id, { status: 'in_review' }, { by: 'ai', expectedRev: cur.rev }),
-    err => err instanceof BoardError && err.code === 'INVALID_TRANSITION'
-  );
+  const r = store.update(cur.id, { status: 'done' }, { by: 'ai', expectedRev: cur.rev });
+  assert.equal(r.item.status, 'done');
 });
 
 await ok('board_supersede 保留旧条目并指向新条目', async () => {
