@@ -8,7 +8,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { Store } from '../store.js';
 import { createTools } from '../tools.js';
-import { normalizeKinds, BoardError } from '../core.js';
+import { normalizeKinds, BoardError, buildCapture } from '../core.js';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saibo-kanban-'));
 const kinds = normalizeKinds(['task', 'decision', 'pitfall', 'design']);
@@ -128,6 +128,55 @@ await ok('每条记录只追加、历史修订号单调递增', async () => {
     assert.equal(evt.rev, prev + 1, `条目 ${evt.id} 的修订号跳了`);
     lastRev.set(evt.id, evt.rev);
   }
+});
+
+await ok('对话里的 board 代码块按 AI 给的状态/类型/范围解析', async () => {
+  const text = [
+    '打印图标修好了，顺手补了回归测试。',
+    '',
+    '```board',
+    '已完成｜任务｜G5 前端｜修好打印图标',
+    '待办 | 决策 | 存储 | 看板改用 SQLite',
+    '```'
+  ].join('\n');
+  const out = buildCapture(text);
+  assert.equal(out.hasMarkers, true);
+  assert.equal(out.items.length, 2);
+  assert.deepEqual(out.items[0], { title: '修好打印图标', kind: 'task', status: 'done', scope: 'G5 前端' });
+  assert.equal(out.items[1].kind, 'decision');
+  assert.equal(out.items[1].status, 'todo');
+  assert.equal(out.body.includes('```'), false, '正文里不应该留下代码块');
+});
+
+await ok('看不懂的 board 行被跳过并给出提示', async () => {
+  const text = '结论如下。\n\n```board\n状态｜类型｜范围｜标题\n胡说｜任务｜存储｜不该出现\n```';
+  const out = buildCapture(text);
+  assert.equal(out.items.length, 1);
+  assert.equal(out.items[0].title, '结论如下');
+  assert.ok(out.warnings.length >= 1);
+});
+
+await ok('没有 board 块时退化：首行做标题、待办', async () => {
+  const out = buildCapture('## 下一步\n\n把导入的备注补齐。');
+  assert.equal(out.items[0].title, '下一步');
+  assert.equal(out.items[0].status, 'todo');
+  assert.equal(out.items[0].kind, 'task');
+});
+
+await ok('空消息不写入', async () => {
+  assert.throws(() => buildCapture('   \n  '), err => err.code === 'EMPTY_MESSAGE');
+});
+
+await ok('从对话写入的条目带来源引用', async () => {
+  const plan = buildCapture('```board\n已完成｜任务｜G5 前端｜修好打印图标\n```');
+  const saved = store.record({
+    ...plan.items[0],
+    body: plan.body,
+    source: { type: 'session', ref: 'session-x#m-1' }
+  }, { by: 'human', note: '从对话加入看板' });
+  assert.equal(saved.status, 'done');
+  assert.equal(store.get(saved.id).source.ref, 'session-x#m-1');
+  assert.equal(store.get(saved.id).rev, 1);
 });
 
 console.log(`\n全部通过：${passed} 项`);

@@ -7,11 +7,23 @@
  */
 import { Store, defaultDataDir } from './store.js';
 import { createTools } from './tools.js';
-import { normalizeKinds } from './core.js';
+import { normalizeKinds, buildCapture, BoardError } from './core.js';
 import { readXlsxBuffer } from './lib/xlsx.js';
 import { buildImport, describeImport } from './lib/import-map.js';
 
 export const inject = ['tools', 'webServer'];
+
+const CAPTURE_HINT = [
+  '看板（saibo-kanban）是这台机器上所有会话共用的活看板：人可以点开页面改、回滚。',
+  '当这轮对话确实产出了值得留下的结果（做完的事、定下的决策、踩到的坑、成型的设计），在回复末尾加一个 board 代码块，一行一条，最多 3 条：',
+  '',
+  '```board',
+  '已完成｜任务｜G5 前端｜修好打印图标',
+  '```',
+  '',
+  '字段顺序固定：状态｜类型｜范围｜标题。状态用 待规划/待办/进行中/待验收/已完成/受阻；类型用 任务/决策/踩坑/设计；范围沿用看板里已有的分组名，不确定就留空（写成 进行中｜任务｜｜标题）。',
+  '没有值得落板的结果就不要写这个块；也不要主动调用 board_record，除非用户明确要求直接写入。'
+].join('\n');
 
 export function apply(ctx, config) {
   const settings = config && typeof config === 'object' ? config : {};
@@ -29,6 +41,17 @@ export function apply(ctx, config) {
     ctx.effect(() => ctx.tools.register(tool), `saibo-kanban: ${tool.name}`);
   }
 
+  if (settings.captureHint !== false) {
+    const prompt = ctx.get('systemPrompt');
+    if (prompt) {
+      ctx.effect(() => prompt.section({
+        name: 'saibo-kanban:capture',
+        order: 640,
+        text: CAPTURE_HINT
+      }), 'saibo-kanban: 看板写入约定');
+    }
+  }
+
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: '/saibo-kanban/api',
@@ -40,7 +63,7 @@ export function apply(ctx, config) {
       }
       try {
         const payload = await readJsonBody(req);
-        const result = dispatch(store, payload.method, payload.args || {});
+        const result = dispatch(ctx, store, payload.method, payload.args || {});
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: true, result }));
       } catch (error) {
@@ -55,7 +78,7 @@ export function apply(ctx, config) {
   }), 'saibo-kanban: /saibo-kanban/api');
 }
 
-function dispatch(store, method, args) {
+function dispatch(ctx, store, method, args) {
   switch (method) {
     case 'list': {
       const result = store.list({ limit: 2000 });
@@ -96,11 +119,98 @@ function dispatch(store, method, args) {
     }
     case 'import.apply': {
       const plan = buildImport(readXlsxBuffer(decodeData(args.data)));
-      return applyPlan(store, plan);
+      return applyPlan(store, plan, args.includeNotes === true);
+    }
+    case 'capture': {
+      return capture(ctx, store, args);
     }
     default:
       throw new Error(`未知方法: ${method}`);
   }
+}
+
+/**
+ * 对话 → 看板：读这条消息，按其中 board 代码块（或首行）写入。
+ * args: { sessionId, messageId?, scope?, text?, dryRun? }
+ * messageId 省略时取该会话最后一条助手消息（便于脚本和自测）。
+ */
+function capture(ctx, store, args) {
+  const source = resolveMessage(ctx, args);
+  const plan = buildCapture(source.text, { scope: args.scope });
+  if (args.dryRun === true) {
+    return {
+      dryRun: true,
+      message: source.message,
+      body: plan.body,
+      items: plan.items,
+      warnings: plan.warnings,
+      hasMarkers: plan.hasMarkers
+    };
+  }
+  const created = [];
+  const existing = [];
+  for (const item of plan.items) {
+    const dup = findSameItem(store, item);
+    if (dup) { existing.push(publicItem(dup)); continue; }
+    const saved = store.record({
+      title: item.title,
+      kind: item.kind,
+      status: item.status,
+      scope: item.scope,
+      body: plan.body,
+      source: source.ref
+    }, { by: 'human', note: '从对话加入看板' });
+    created.push(publicItem(saved));
+  }
+  return { created, existing, warnings: plan.warnings, hasMarkers: plan.hasMarkers };
+}
+
+/** 从活会话里取出一条消息的纯文本。 */
+function resolveMessage(ctx, args) {
+  if (typeof args.text === 'string' && args.text.trim()) {
+    return { text: args.text, ref: null, message: null };
+  }
+  const sessionId = typeof args.sessionId === 'string' ? args.sessionId : '';
+  if (!sessionId) throw new BoardError('NO_SESSION', '缺少会话 id，读不到消息');
+  const sessions = ctx.get('sessions');
+  if (!sessions) throw new BoardError('NO_SESSIONS', '运行时没有会话服务');
+  const session = sessions.get(sessionId);
+  if (!session) throw new BoardError('NO_SESSION', '这个会话不在内存里了，请刷新页面再试');
+  let messages;
+  try {
+    messages = session.deriveMessages();
+  } catch (error) {
+    throw new BoardError('NO_MESSAGES', '读取会话消息失败');
+  }
+  const message = typeof args.messageId === 'string' && args.messageId
+    ? messages.find(m => m && m.id === args.messageId)
+    : [...messages].reverse().find(m => m && m.role === 'assistant');
+  if (!message) throw new BoardError('NO_MESSAGE', '找不到这条消息');
+  return {
+    text: messageText(message),
+    ref: { type: 'session', ref: `${sessionId}#${message.id}` },
+    message: { id: message.id, role: message.role }
+  };
+}
+
+function messageText(message) {
+  const blocks = Array.isArray(message.content) ? message.content : [];
+  const texts = [];
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') continue;
+    if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text);
+  }
+  return texts.join('\n\n').trim();
+}
+
+/** 同范围同标题的活跃条目视为已存在，不重复写。 */
+function findSameItem(store, item) {
+  const scope = item.scope || '';
+  for (const current of store.items.values()) {
+    if (current.archived || current.mergedInto || current.supersededBy) continue;
+    if ((current.scope || '') === scope && current.title === item.title) return current;
+  }
+  return null;
 }
 
 function publicItem(item) {
@@ -124,7 +234,7 @@ function decodeData(data) {
   return Buffer.from(data, 'base64');
 }
 
-function applyPlan(store, plan) {
+function applyPlan(store, plan, includeNotes = false) {
   const existing = new Set([...store.items.values()].map(i => `${i.scope}|${i.title}`));
   let imported = 0;
   let skipped = 0;
@@ -138,7 +248,7 @@ function applyPlan(store, plan) {
   };
   for (const item of plan.main) write(item, '导入：任务主表');
   for (const item of plan.rolling) write(item, '导入：长期滚动项');
-  if (plan.notes && args.includeNotes === true) write(plan.notes, '导入：节点说明');
+  if (plan.notes && includeNotes === true) write(plan.notes, '导入：节点说明');
   return { imported, skipped, summary: describeImport(plan) };
 }
 

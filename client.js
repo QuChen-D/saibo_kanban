@@ -512,6 +512,66 @@ window.__ModuleLoader__.load({
       }).join('；');
     }
 
+    const CAPTURE_CSS = `
+      .skcap-wrap { display:inline-flex; align-items:center; }
+      .skcap { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:var(--dsw-alias-label-secondary,#6b7280); border-radius:6px; padding:1px 8px; font:inherit; font-size:12px; line-height:20px; cursor:pointer; white-space:nowrap; }
+      .skcap:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); color:var(--dsw-alias-label-primary,#17181a); }
+      .skcap[disabled] { cursor:default; opacity:.7; }
+      .skcap.ok { color:var(--dsw-alias-state-success-primary,#16a34a); border-color:var(--dsw-alias-state-success-primary,#16a34a); }
+      .skcap.err { color:var(--dsw-alias-state-error-primary,#dc2626); border-color:var(--dsw-alias-state-error-primary,#dc2626); }
+    `;
+
+    /** 助手消息动作：一键把这条消息加入全局看板（范围/类型/状态由 AI 在消息里给出）。 */
+    function CaptureAction(props) {
+      const [phase, setPhase] = useState('idle');
+      const [tip, setTip] = useState('');
+      const [count, setCount] = useState(0);
+      const sessionId = props && props.sessionId ? props.sessionId : '';
+      const messageId = props && props.messageId ? props.messageId : '';
+
+      const run = useCallback(() => {
+        if (phase === 'busy') return;
+        setPhase('busy');
+        api('capture', { sessionId, messageId })
+          .then(result => {
+            const created = (result && result.created) || [];
+            const existing = (result && result.existing) || [];
+            const warnings = (result && result.warnings) || [];
+            const parts = [];
+            if (created.length) parts.push('已加入：' + created.map(i => i.title).join('、'));
+            if (existing.length) parts.push('已在看板：' + existing.map(i => i.title).join('、'));
+            if (warnings.length) parts.push(warnings.join('；'));
+            setTip(parts.join(' ｜ '));
+            setCount(created.length);
+            setPhase('ok');
+          })
+          .catch(error => {
+            setTip(error && error.message ? error.message : '加入失败');
+            setPhase('err');
+          });
+      }, [phase, sessionId, messageId]);
+
+      const label = phase === 'busy'
+        ? '加入中…'
+        : phase === 'ok'
+          ? (count > 0 ? '已加入 ' + count : '已在看板')
+          : phase === 'err'
+            ? '加入失败'
+            : '＋ 看板';
+      const tone = phase === 'ok' ? ' ok' : phase === 'err' ? ' err' : '';
+
+      return h('span', { className: 'skcap-wrap' },
+        h('style', null, CAPTURE_CSS),
+        h('button', {
+          type: 'button',
+          className: 'skcap' + tone,
+          disabled: phase === 'busy',
+          title: tip || '把这条消息加入看板：范围、类型、状态沿用 AI 在消息结尾给出的值',
+          onClick: run
+        }, label)
+      );
+    }
+
     function RailIcon(props) {
       const size = props && props.size ? props.size : 18;
       return h('svg', {
@@ -532,6 +592,13 @@ window.__ModuleLoader__.load({
           order: -10,
           label: '看板'
         }, Panel));
+
+        ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
+          name: 'conversation.chat.assistant-actions',
+          id: 'saibo-capture',
+          order: 20,
+          label: '加入看板'
+        }, CaptureAction));
       }
     };
   }
