@@ -362,11 +362,11 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots'],
       apply(ctx) {
-        ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-          name: 'sidebar.panellist', id: 'saibo-kanban', order: 6, label: '看板'
-        }, props => h('span', { className: 'sk-rail' }, h(RailIcon, props))));
-        ctx.slots.inject('main', () => ctx.slots.register({
-          name: 'main', key: 'saibo-kanban'
+        ctx.slots.inject('conversation.view', () => ctx.slots.register({
+          name: 'conversation.view',
+          id: 'saibo-kanban',
+          order: 15,
+          label: '看板'
         }, Panel));
       }
     };
