@@ -72,6 +72,13 @@ window.__ModuleLoader__.load({
       .sk-sel { border:1px solid transparent; background:transparent; color:inherit; font:inherit; font-size:12px; border-radius:6px; padding:3px 4px; cursor:pointer; max-width:110px; }
       .sk-sel:hover { border-color:var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); }
       .sk-rev { width:44px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
+      .sk-num { width:34px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
+      .sk-th { background:var(--dsw-alias-bg-layer-2,#f7f8fa); font-size:11.5px; font-weight:600; color:var(--dsw-alias-label-secondary,#6b7280); position:sticky; top:0; z-index:1; }
+      .sk-col-k { width:76px; flex:none; }
+      .sk-col-s { width:92px; flex:none; }
+      .sk-col-sc { width:120px; flex:none; }
+      .sk-row.arch { opacity:.6; }
+      .sk-badge { margin-left:6px; font-size:10.5px; color:var(--dsw-alias-label-secondary,#6b7280); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:999px; padding:0 6px; vertical-align:1px; }
       .sk-board { display:grid; grid-template-columns:repeat(6,minmax(160px,1fr)); gap:10px; align-items:start; }
       .sk-col { background:var(--dsw-alias-bg-layer-2,#f3f4f6); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:10px; min-height:110px; }
       .sk-col-head { display:flex; align-items:center; gap:6px; padding:9px 11px; font-weight:600; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); border-bottom:1px solid var(--dsw-alias-border-l1,#e6e7eb); }
@@ -108,6 +115,7 @@ window.__ModuleLoader__.load({
     function Panel() {
       const [items, setItems] = useState([]);
       const [view, setView] = useState('table');
+      const [showArchived, setShowArchived] = useState(false);
       const [query, setQuery] = useState('');
       const [error, setError] = useState('');
       const [detail, setDetail] = useState(null);
@@ -130,11 +138,11 @@ window.__ModuleLoader__.load({
 
       const load = useCallback(async () => {
         try {
-          const r = await api('list');
+          const r = await api('list', { includeArchived: showArchived });
           setItems(r.items);
           setError('');
         } catch (e) { setError(e.message); }
-      }, []);
+      }, [showArchived]);
 
       useEffect(() => { load(); }, [load]);
 
@@ -190,6 +198,10 @@ window.__ModuleLoader__.load({
           className: 'sk-search', placeholder: '搜索标题 / 编号 / 范围',
           value: query, onChange: e => setQuery(e.target.value)
         }),
+        h('button', {
+          className: 'sk-btn' + (showArchived ? ' primary' : ''),
+          onClick: () => setShowArchived(v => !v)
+        }, showArchived ? '隐藏归档' : '显示归档'),
         h('button', { className: 'sk-btn', onClick: () => fileRef.current && fileRef.current.click() }, '导入 xlsx'),
         h('input', {
           ref: fileRef, type: 'file', accept: '.xlsx', style: { display: 'none' },
@@ -223,8 +235,19 @@ window.__ModuleLoader__.load({
         content = h('div', null,
           quick,
           h('div', { className: 'sk-panel' },
+            h('div', { className: 'sk-row sk-th' },
+              h('span', { className: 'sk-num' }, '#'),
+              h('span', { className: 'sk-id' }, '编号'),
+              h('span', { className: 'sk-name', style: { cursor: 'default' } }, '标题'),
+              h('span', { className: 'sk-col-k' }, '类型'),
+              h('span', { className: 'sk-col-s' }, '状态'),
+              h('span', { className: 'sk-col-sc' }, '范围'),
+              h('span', { className: 'sk-rev' }, '修订'),
+              h('span', { style: { width: 44 } }, '')
+            ),
             visible.length === 0 ? h('div', { className: 'sk-empty' }, '还没有条目。跟 agent 说“记一条…”，或在上面的输入框快加。') :
-            visible.map(item => h('div', { key: item.id, className: 'sk-row' },
+            visible.map((item, index) => h('div', { key: item.id, className: 'sk-row' + (item.archived ? ' arch' : '') },
+              h('span', { className: 'sk-num' }, String(index + 1)),
               h('span', { className: 'sk-id' }, item.id),
               h('div', {
                 className: 'sk-name',
@@ -237,17 +260,17 @@ window.__ModuleLoader__.load({
                   if (e.key === 'Enter') e.currentTarget.blur();
                   if (e.key === 'Escape') setEditing(null);
                 }
-              }) : item.title),
+              }) : item.title, item.archived ? h('span', { className: 'sk-badge' }, '已归档') : null),
               h('select', {
-                className: 'sk-sel', value: item.kind,
+                className: 'sk-sel sk-col-k', value: item.kind,
                 onChange: e => update(item.id, item.rev, { kind: e.target.value })
               }, KINDS.map(k => h('option', { key: k.id, value: k.id }, k.label))),
               h('select', {
-                className: 'sk-sel', value: item.status,
+                className: 'sk-sel sk-col-s', value: item.status,
                 onChange: e => setStatus(item, e.target.value)
               }, STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label))),
               h('select', {
-                className: 'sk-sel', value: item.scope || '',
+                className: 'sk-sel sk-col-sc', value: item.scope || '',
                 onChange: e => update(item.id, item.rev, { scope: e.target.value })
               }, h('option', { value: '' }, '范围'), SCOPES.map(s => h('option', { key: s, value: s }, s))),
               h('span', { className: 'sk-rev' }, 'r' + item.rev),
@@ -346,10 +369,15 @@ window.__ModuleLoader__.load({
               className: 'sk-sel', value: detail.item.scope || '',
               onChange: e => update(detail.item.id, detail.item.rev, { scope: e.target.value })
             }, h('option', { value: '' }, '范围'), SCOPES.map(s => h('option', { key: s, value: s }, s))),
-            h('button', {
-              className: 'sk-btn danger',
-              onClick: () => run(() => api('archive', { id: detail.item.id }), '已归档').then(() => setDetail(null))
-            }, '归档')
+            detail.item.archived
+              ? h('button', {
+                className: 'sk-btn',
+                onClick: () => run(() => api('restore', { id: detail.item.id }), '已恢复').then(() => setDetail(null))
+              }, '恢复')
+              : h('button', {
+                className: 'sk-btn danger',
+                onClick: () => run(() => api('archive', { id: detail.item.id }), '已归档').then(() => setDetail(null))
+              }, '归档')
           ),
           h('div', { className: 'sk-hist' },
             h('h4', null, '修订历史（点“回滚”回到那一版）'),
