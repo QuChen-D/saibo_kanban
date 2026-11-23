@@ -147,22 +147,41 @@ function capture(ctx, store, args) {
       hasMarkers: plan.hasMarkers
     };
   }
+  const applied = applyCapture(store, plan, source.ref);
+  return { ...applied, warnings: plan.warnings, hasMarkers: plan.hasMarkers };
+}
+
+/** 把解析结果落库：新建；同范围同标题则更新状态；状态相同才算已存在。 */
+export function applyCapture(store, plan, source) {
   const created = [];
+  const updated = [];
   const existing = [];
   for (const item of plan.items) {
     const dup = findSameItem(store, item);
-    if (dup) { existing.push(publicItem(dup)); continue; }
+    if (dup) {
+      if (dup.status !== item.status) {
+        const result = store.update(dup.id, { status: item.status }, {
+          by: 'human',
+          expectedRev: dup.rev,
+          note: '从对话更新状态'
+        });
+        updated.push(publicItem(result.item));
+      } else {
+        existing.push(publicItem(dup));
+      }
+      continue;
+    }
     const saved = store.record({
       title: item.title,
       kind: item.kind,
       status: item.status,
       scope: item.scope,
       body: plan.body,
-      source: source.ref
+      source
     }, { by: 'human', note: '从对话加入看板' });
     created.push(publicItem(saved));
   }
-  return { created, existing, warnings: plan.warnings, hasMarkers: plan.hasMarkers };
+  return { created, updated, existing };
 }
 
 /** 从活会话里取出一条消息的纯文本。 */
@@ -182,15 +201,31 @@ function resolveMessage(ctx, args) {
   } catch (error) {
     throw new BoardError('NO_MESSAGES', '读取会话消息失败');
   }
-  const message = typeof args.messageId === 'string' && args.messageId
-    ? messages.find(m => m && m.id === args.messageId)
-    : [...messages].reverse().find(m => m && m.role === 'assistant');
-  if (!message) throw new BoardError('NO_MESSAGE', '找不到这条消息');
+  const index = typeof args.messageId === 'string' && args.messageId
+    ? messages.findIndex(m => m && m.id === args.messageId)
+    : messages.length - 1;
+  if (index < 0) throw new BoardError('NO_MESSAGE', '找不到这条消息');
+  const picked = pickTextMessage(messages, index);
+  if (!picked) throw new BoardError('EMPTY_MESSAGE', '这条消息没有可加入看板的内容');
   return {
-    text: messageText(message),
-    ref: { type: 'session', ref: `${sessionId}#${message.id}` },
-    message: { id: message.id, role: message.role }
+    text: picked.text,
+    ref: { type: 'session', ref: `${sessionId}#${picked.message.id}` },
+    message: { id: picked.message.id, role: picked.message.role }
   };
+}
+
+/**
+ * 从 from 往前找第一条有文字的助手消息。
+ * 工具调用步骤没有文字，点它的「＋ 看板」时落到同一轮最后的答复上。
+ */
+function pickTextMessage(messages, from) {
+  for (let i = from; i >= 0 && i >= from - 12; i -= 1) {
+    const message = messages[i];
+    if (!message || message.role !== 'assistant') continue;
+    const text = messageText(message);
+    if (text) return { message, text };
+  }
+  return null;
 }
 
 function messageText(message) {

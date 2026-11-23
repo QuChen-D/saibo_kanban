@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { Store } from '../store.js';
 import { createTools } from '../tools.js';
 import { normalizeKinds, BoardError, buildCapture } from '../core.js';
+import { applyCapture } from '../index.js';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saibo-kanban-'));
 const kinds = normalizeKinds(['task', 'decision', 'pitfall', 'design']);
@@ -177,6 +178,22 @@ await ok('从对话写入的条目带来源引用', async () => {
   assert.equal(saved.status, 'done');
   assert.equal(store.get(saved.id).source.ref, 'session-x#m-1');
   assert.equal(store.get(saved.id).rev, 1);
+});
+
+await ok('落板：新建 → 重复算已存在 → 状态变了就更新', async () => {
+  const plan = buildCapture('```board\n待办｜任务｜存储｜验证捕获去重\n```');
+  const first = applyCapture(store, plan, { type: 'session', ref: 'session-y#m-2' });
+  assert.equal(first.created.length, 1);
+  assert.equal(first.created[0].status, 'todo');
+
+  const second = applyCapture(store, plan, null);
+  assert.equal(second.created.length, 0);
+  assert.equal(second.existing.length, 1);
+
+  const donePlan = buildCapture('```board\n已完成｜任务｜存储｜验证捕获去重\n```');
+  const third = applyCapture(store, donePlan, null);
+  assert.equal(third.updated.length, 1);
+  assert.equal(store.get(third.updated[0].id).status, 'done');
 });
 
 console.log(`\n全部通过：${passed} 项`);

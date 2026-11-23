@@ -535,14 +535,16 @@ window.__ModuleLoader__.load({
         api('capture', { sessionId, messageId })
           .then(result => {
             const created = (result && result.created) || [];
+            const updated = (result && result.updated) || [];
             const existing = (result && result.existing) || [];
             const warnings = (result && result.warnings) || [];
             const parts = [];
             if (created.length) parts.push('已加入：' + created.map(i => i.title).join('、'));
+            if (updated.length) parts.push('已更新：' + updated.map(i => i.title + ' → ' + statusLabel(i.status)).join('、'));
             if (existing.length) parts.push('已在看板：' + existing.map(i => i.title).join('、'));
             if (warnings.length) parts.push(warnings.join('；'));
             setTip(parts.join(' ｜ '));
-            setCount(created.length);
+            setCount(created.length + updated.length);
             setPhase('ok');
           })
           .catch(error => {
