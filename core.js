@@ -220,12 +220,13 @@ export function parseBoardCapture(text) {
         continue;
       }
       const scope = parts[2].slice(0, 60);
-      const title = parts.slice(3).join('｜').trim().slice(0, 200);
+      const title = parts[3].trim().slice(0, 200);
+      const summary = parts.slice(4).join('｜').trim().slice(0, 160);
       if (!title) {
         warnings.push('标题为空，已跳过');
         continue;
       }
-      entries.push({ title, kind, status, scope });
+      entries.push({ title, kind, status, scope, summary });
     }
   }
   return { entries, warnings };
@@ -257,28 +258,47 @@ function fallbackTitle(text) {
   return '';
 }
 
+/** 无说明时的兜底正文：第一段，最多 300 字。 */
+function firstParagraph(text) {
+  const body = stripBoardCapture(text);
+  for (const block of body.split(/\n{2,}/)) {
+    const s = block.trim();
+    if (!s) continue;
+    return s.length > 300 ? s.slice(0, 300) : s;
+  }
+  return '';
+}
+
 /**
- * 把一条消息变成待写入条目：{ body, items, warnings, hasMarkers }。
- * items 为空且没有可用首行时抛 EMPTY_MESSAGE。
+ * 把一条消息变成待写入条目：{ body, items, warnings, hasMarkers, sourceText }。
+ * 每条条目取自己的「说明」当正文；没有说明就退化为第一段。
  */
 export function buildCapture(text, options = {}) {
   const source = typeof text === 'string' ? text : '';
   const parsed = parseBoardCapture(source);
-  const body = stripBoardCapture(source);
+  const fallback = firstParagraph(source);
   const scope = typeof options.scope === 'string' ? options.scope : '';
   const items = parsed.entries.map(entry => ({
     ...entry,
-    scope: entry.scope || scope
+    scope: entry.scope || scope,
+    summary: entry.summary || fallback
   }));
   if (items.length === 0) {
-    const title = fallbackTitle(body);
+    const title = fallbackTitle(source);
     if (!title) throw new BoardError('EMPTY_MESSAGE', '这条消息没有可加入看板的内容');
-    items.push({ title, kind: 'task', status: options.status || 'todo', scope });
+    items.push({
+      title,
+      kind: 'task',
+      status: options.status || 'todo',
+      scope,
+      summary: fallback
+    });
   }
   return {
-    body,
+    body: fallback,
     items,
     warnings: parsed.warnings,
-    hasMarkers: parsed.entries.length > 0
+    hasMarkers: parsed.entries.length > 0,
+    sourceText: stripBoardCapture(source)
   };
 }

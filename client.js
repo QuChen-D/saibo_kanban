@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
 
     function displayContent(body) {
       if (!body) return '—';
-      const meta = /^(编号|类型|优先级|滚动次数|首次来源|最近来源)：/;
+      const meta = /^(编号|类型|优先级|滚动次数|首次来源|最近来源|来源)：/;
       const lines = String(body).split('\n').map(s => s.trim()).filter(Boolean);
       const real = lines.filter(l => !meta.test(l));
       return real[0] || '—';
@@ -699,7 +699,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'skrc-sub' },
                 view.statusLabel + ' · ' + (view.scope || '未定范围') + ' · ' + view.reason
                 + (view.matched.length
-                  ? ' · 命中 ' + view.matched.map(entry => entry.term + (entry.field === 'title' ? '(标题)' : '(正文)')).join(' ')
+                  ? ' · 命中 ' + view.matched.map(entry => entry.term + (entry.field === 'title' ? '(标题)' : entry.field === 'body' ? '(正文)' : '(原文)')).join(' ')
                   : '')),
               h('div', { className: 'skrc-hist' }, view.historyLine)
             ))

@@ -14,6 +14,7 @@ import {
   buildIndex, searchIndex, hitView, buildInjectText, estimateTokens, queryTerms
 } from './lib/recall.js';
 import { appendRecall, recallStats } from './lib/recall-log.js';
+import { appendCaptured, loadCaptured } from './lib/capture-archive.js';
 
 export const inject = ['tools', 'webServer'];
 
@@ -24,9 +25,10 @@ const recallCache = new WeakMap();
 
 function recallIndexFor(store) {
   const cached = recallCache.get(store);
-  if (cached && cached.rev === store.events) return cached.index;
-  const index = buildIndex(store.items);
-  recallCache.set(store, { rev: store.events, index });
+  const rev = `${store.events}:${store.capturedRev || 0}`;
+  if (cached && cached.rev === rev) return cached.index;
+  const index = buildIndex(store.items, store.captured || new Map());
+  recallCache.set(store, { rev, index });
   return index;
 }
 
@@ -35,10 +37,10 @@ const CAPTURE_HINT = [
   '当这轮对话确实产出了值得留下的结果（做完的事、定下的决策、踩到的坑、成型的设计），在回复末尾加一个 board 代码块，一行一条，最多 3 条：',
   '',
   '```board',
-  '已完成｜任务｜G5 前端｜修好打印图标',
+  '已完成｜任务｜G5 前端｜修好打印图标｜补了回归测试，弹窗不再串数据',
   '```',
   '',
-  '字段顺序固定：状态｜类型｜范围｜标题。状态用 待规划/待办/进行中/待验收/已完成/受阻；类型用 任务/决策/踩坑/设计；范围沿用看板里已有的分组名，不确定就留空（写成 进行中｜任务｜｜标题）。',
+  '字段顺序固定：状态｜类型｜范围｜标题｜说明。状态用 待规划/待办/进行中/待验收/已完成/受阻；类型用 任务/决策/踩坑/设计；范围沿用看板里已有的分组名，不确定就留空；说明写一句话结果或依据（60 字内），它会成为看板里的正文。',
   '没有值得落板的结果就不要写这个块；也不要主动调用 board_record，除非用户明确要求直接写入。'
 ].join('\n');
 
@@ -55,6 +57,8 @@ export function apply(ctx, config) {
     : defaultDataDir();
   const kinds = normalizeKinds(settings.kinds);
   const store = new Store({ dataDir, kinds }).load();
+  store.captured = loadCaptured(dataDir);
+  store.capturedRev = 0;
   const turnState = new Map();
   const tools = createTools(store, {
     kinds,
@@ -233,15 +237,33 @@ function capture(ctx, store, args) {
       hasMarkers: plan.hasMarkers
     };
   }
-  const applied = applyCapture(store, plan, source.ref);
+  const applied = applyCapture(store, plan, source.ref, {
+    sourceLabel: source.ref ? `对话 · ${new Date().toISOString().slice(0, 10)}` : '',
+    archive: (id, text) => {
+      if (!text) return;
+      try {
+        appendCaptured(store.dataDir, id, text, {
+          sessionId: typeof args.sessionId === 'string' ? args.sessionId : '',
+          messageId: source.message ? source.message.id : ''
+        });
+      } catch { /* 原文索引失败不影响落板 */ }
+      store.captured.set(id, text);
+      store.capturedRev = (store.capturedRev || 0) + 1;
+    }
+  });
   return { ...applied, warnings: plan.warnings, hasMarkers: plan.hasMarkers };
 }
 
 /** 把解析结果落库：新建；同范围同标题则更新状态；状态相同才算已存在。 */
-export function applyCapture(store, plan, source) {
+export function applyCapture(store, plan, source, options = {}) {
   const created = [];
   const updated = [];
   const existing = [];
+  const sourceLabel = typeof options.sourceLabel === 'string' ? options.sourceLabel : '';
+  const bodyFor = item => {
+    const summary = String(item.summary || plan.body || '').trim();
+    return sourceLabel ? `${summary}\n\n来源：${sourceLabel}` : summary;
+  };
   for (const item of plan.items) {
     const dup = findSameItem(store, item);
     if (dup) {
@@ -262,9 +284,10 @@ export function applyCapture(store, plan, source) {
       kind: item.kind,
       status: item.status,
       scope: item.scope,
-      body: plan.body,
+      body: bodyFor(item),
       source
     }, { by: 'human', note: '从对话加入看板' });
+    if (typeof options.archive === 'function' && plan.sourceText) options.archive(saved.id, plan.sourceText);
     created.push(publicItem(saved));
   }
   return { created, updated, existing };

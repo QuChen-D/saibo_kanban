@@ -138,14 +138,14 @@ await ok('对话里的 board 代码块按 AI 给的状态/类型/范围解析', 
     '打印图标修好了，顺手补了回归测试。',
     '',
     '```board',
-    '已完成｜任务｜G5 前端｜修好打印图标',
+    '已完成｜任务｜G5 前端｜修好打印图标｜补了回归测试',
     '待办 | 决策 | 存储 | 看板改用 SQLite',
     '```'
   ].join('\n');
   const out = buildCapture(text);
   assert.equal(out.hasMarkers, true);
   assert.equal(out.items.length, 2);
-  assert.deepEqual(out.items[0], { title: '修好打印图标', kind: 'task', status: 'done', scope: 'G5 前端' });
+  assert.deepEqual(out.items[0], { title: '修好打印图标', kind: 'task', status: 'done', scope: 'G5 前端', summary: '补了回归测试' });
   assert.equal(out.items[1].kind, 'decision');
   assert.equal(out.items[1].status, 'todo');
   assert.equal(out.body.includes('```'), false, '正文里不应该留下代码块');
@@ -314,6 +314,49 @@ await ok('轮内改动：能拿到旧状态和回滚点', async () => {
   assert.equal(hit.status, 'done');
   assert.equal(hit.previousRev, 1);
   assert.equal(hit.note, '这轮做完了');
+});
+
+await ok('落板正文用说明，不再塞整篇原文', async () => {
+  const text = [
+    '## 结果',
+    '',
+    '打印图标修好了，补了回归测试。',
+    '',
+    '```board',
+    '已完成｜任务｜G5 新分组｜修好打印图标 v2｜补了回归测试，弹窗不再串数据',
+    '```',
+    '',
+    '后面还有一大段无关细节……'
+  ].join('\n');
+  const plan = buildCapture(text);
+  assert.equal(plan.items[0].summary, '补了回归测试，弹窗不再串数据');
+  const applied = applyCapture(store, plan, { type: 'session', ref: 's#m' }, { sourceLabel: '对话 · 2026-11-24' });
+  const item = store.get(applied.created[0].id);
+  assert.match(item.body, /补了回归测试/);
+  assert.match(item.body, /来源：对话/);
+  assert.ok(item.body.length < 90, '正文应该是一句话加来源，不是整篇');
+  assert.equal(item.body.includes('无关细节'), false);
+});
+
+await ok('原文进索引但不进正文', async () => {
+  const now = new Date().toISOString();
+  const items = new Map();
+  for (let i = 0; i < 40; i += 1) {
+    items.set('g' + i, {
+      id: 'g' + i, title: '占位 ' + i, body: '无关', status: 'done', kind: 'task',
+      scope: '占位', rev: 1, updatedAt: now
+    });
+  }
+  items.set('x1', {
+    id: 'x1', title: '某条目', body: '一句话说明', status: 'done', kind: 'task',
+    scope: 'G5', rev: 1, updatedAt: now
+  });
+  const extras = new Map([['x1', '原文里提到 dompurify 依赖缺失导致 XSS 防护失效']]);
+  const index = buildIndex(items, extras);
+  const hits = searchIndex(index, items, [{ text: 'dompurify 依赖缺失', weight: 1 }], { threshold: 1 });
+  assert.equal(hits[0].item.id, 'x1');
+  assert.ok(hits[0].matched.some(entry => entry.field === 'source'), '应该命中原文');
+  assert.match(hits[0].reason, /原文/);
 });
 
 console.log(`\n全部通过：${passed} 项`);
