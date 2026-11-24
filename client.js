@@ -610,12 +610,12 @@ window.__ModuleLoader__.load({
       }, [phase, sessionId, messageId]);
 
       const label = phase === 'busy'
-        ? '加入中…'
+        ? '…'
         : phase === 'ok'
-          ? (count > 0 ? '已加入 ' + count : '已在看板')
+          ? (count > 0 ? '✓' + count : '✓')
           : phase === 'err'
-            ? '加入失败'
-            : '＋ 看板';
+            ? '!'
+            : '+';
       const tone = phase === 'ok' ? ' ok' : phase === 'err' ? ' err' : '';
 
       return h('span', { className: 'skcap-wrap' },
@@ -624,7 +624,7 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: 'skcap' + tone,
           disabled: phase === 'busy',
-          title: tip || '把这条消息加入看板：范围、类型、状态沿用 AI 在消息结尾给出的值',
+          title: tip || '添加看板',
           onClick: run
         }, label)
       );
@@ -656,9 +656,9 @@ window.__ModuleLoader__.load({
 
       const views = (data && data.views) || [];
       const hitCount = views.filter(view => view.reason !== '低分' && view.reason !== '泛词').length;
-      const label = state === 'busy' ? '检索中…'
-        : state === 'ready' ? ('相关看板 ' + hitCount + '/' + views.length)
-          : '相关看板';
+      const label = state === 'busy' ? '…'
+        : state === 'ready' ? ('kanban ' + hitCount + '/' + views.length)
+          : 'kanban';
       const stats = (data && data.stats) || null;
 
       const panel = open && data ? h('div', { className: 'skrc-panel' },
@@ -703,7 +703,7 @@ window.__ModuleLoader__.load({
         h('style', null, RECALL_CSS),
         h('button', {
           className: 'skrc-btn' + (state === 'ready' ? ' on' : ''),
-          title: '只读检索看板的相关条目：不注入模型、不花 token',
+          title: '相关看板',
           onClick: toggle
         }, label),
         panel
