@@ -553,6 +553,30 @@ window.__ModuleLoader__.load({
       .skcap.err { color:var(--dsw-alias-state-error-primary,#dc2626); border-color:var(--dsw-alias-state-error-primary,#dc2626); }
     `;
 
+    const RECALL_CSS = `
+      .skrc-wrap { display:inline-flex; align-items:center; }
+      .skrc-btn { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:var(--dsw-alias-label-secondary,#6b7280); border-radius:6px; padding:1px 8px; font:inherit; font-size:12px; line-height:20px; cursor:pointer; white-space:nowrap; }
+      .skrc-btn:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); color:var(--dsw-alias-label-primary,#17181a); }
+      .skrc-btn.on { color:var(--dsw-alias-brand-primary,#2563eb); border-color:var(--dsw-alias-brand-primary,#2563eb); }
+      .skrc-panel { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); width:min(560px,92vw); max-height:64vh; overflow:auto; background:var(--dsw-alias-bg-overlay,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:12px; box-shadow:0 18px 48px rgba(16,24,40,.24); padding:12px 14px; z-index:60; font-size:12px; line-height:1.55; color:var(--dsw-alias-label-primary,#17181a); }
+      .skrc-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+      .skrc-head b { font-size:13px; }
+      .skrc-meta { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
+      .skrc-x { margin-left:auto; border:0; background:transparent; color:var(--dsw-alias-label-secondary,#6b7280); cursor:pointer; font:inherit; font-size:12px; }
+      .skrc-terms { color:var(--dsw-alias-label-secondary,#6b7280); border-bottom:1px dashed var(--dsw-alias-border-l1,#e6e7eb); padding-bottom:6px; margin-bottom:6px; }
+      .skrc-row { padding:6px 0; border-bottom:1px dashed var(--dsw-alias-border-l1,#f0f1f4); }
+      .skrc-row:last-child { border-bottom:0; }
+      .skrc-title { display:flex; align-items:baseline; gap:8px; font-weight:600; }
+      .skrc-score { margin-left:auto; font-weight:500; color:var(--dsw-alias-label-secondary,#6b7280); }
+      .skrc-sub { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; margin-top:2px; }
+      .skrc-hist { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; margin-top:1px; }
+      .skrc-inject { margin-top:10px; border-top:1px solid var(--dsw-alias-border-l1,#e6e7eb); padding-top:8px; }
+      .skrc-pre { margin:6px 0 0; padding:8px; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:8px; white-space:pre-wrap; font-family:ui-monospace,Consolas,monospace; font-size:11.5px; }
+      .skrc-stats { margin-top:8px; color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
+      .skrc-empty { color:var(--dsw-alias-label-secondary,#6b7280); }
+      .skrc-err { color:var(--dsw-alias-state-error-primary,#dc2626); }
+    `;
+
     /** 助手消息动作：一键把这条消息加入全局看板（范围/类型/状态由 AI 在消息里给出）。 */
     function CaptureAction(props) {
       const [phase, setPhase] = useState('idle');
@@ -606,6 +630,86 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** 只读召回预览：检索看板相关条目，展示但不注入模型（0 token）。 */
+    function RecallAction(props) {
+      const [state, setState] = useState('idle');
+      const [data, setData] = useState(null);
+      const [open, setOpen] = useState(false);
+      const sessionId = props && props.sessionId ? props.sessionId : '';
+      const messageId = props && props.messageId ? props.messageId : '';
+
+      const load = useCallback(() => {
+        setState('busy');
+        api('recall', { sessionId, messageId })
+          .then(result => { setData(result); setState('ready'); setOpen(true); })
+          .catch(error => {
+            setData({ error: error && error.message ? error.message : '检索失败' });
+            setState('err');
+            setOpen(true);
+          });
+      }, [sessionId, messageId]);
+
+      const toggle = useCallback(() => {
+        if (state === 'idle' || state === 'err') { load(); return; }
+        setOpen(value => !value);
+      }, [state, load]);
+
+      const views = (data && data.views) || [];
+      const hitCount = views.filter(view => view.reason !== '低分' && view.reason !== '泛词').length;
+      const label = state === 'busy' ? '检索中…'
+        : state === 'ready' ? ('相关看板 ' + hitCount + '/' + views.length)
+          : '相关看板';
+      const stats = (data && data.stats) || null;
+
+      const panel = open && data ? h('div', { className: 'skrc-panel' },
+        h('div', { className: 'skrc-head' },
+          h('b', null, '相关看板'),
+          h('span', { className: 'skrc-meta' }, '只展示，不注入 · 本次 0 token'),
+          h('button', { className: 'skrc-x', onClick: () => setOpen(false) }, '关闭')
+        ),
+        data.error ? h('div', { className: 'skrc-err' }, data.error) : h('div', null,
+          h('div', { className: 'skrc-terms' },
+            '本轮理解：' + ((data.query && data.query.terms && data.query.terms.length)
+              ? data.query.terms.join(' · ')
+              : '（没有可用关键词）')),
+          views.length === 0 ? h('div', { className: 'skrc-empty' }, '没有相关条目') : h('div', null,
+            views.map((view, index) => h('div', { key: view.id, className: 'skrc-row' },
+              h('div', { className: 'skrc-title' },
+                h('span', null, (index + 1) + '. ' + view.title),
+                h('span', { className: 'skrc-score' }, view.score.toFixed(2))
+              ),
+              h('div', { className: 'skrc-sub' },
+                view.statusLabel + ' · ' + (view.scope || '未定范围') + ' · ' + view.reason
+                + (view.matched.length
+                  ? ' · 命中 ' + view.matched.map(entry => entry.term + (entry.field === 'title' ? '(标题)' : '(正文)')).join(' ')
+                  : '')),
+              h('div', { className: 'skrc-hist' }, view.historyLine)
+            ))
+          ),
+          h('div', { className: 'skrc-inject' },
+            h('div', null, '若注入：约 ' + data.injectTokens + ' token'),
+            data.injectText
+              ? h('pre', { className: 'skrc-pre' }, data.injectText)
+              : h('div', { className: 'skrc-empty' }, '本轮没有过阈值的条目，不会注入')
+          ),
+          h('div', { className: 'skrc-stats' },
+            '已记录到 recall.jsonl：今天 ' + (stats ? stats.count : 0) + ' 次'
+            + ' · 预计注入 ' + (stats ? stats.injectTokens : 0) + ' token'
+            + ' · 实际注入 ' + (stats ? stats.actualTokens : 0) + ' token')
+        )
+      ) : null;
+
+      return h('span', { className: 'skrc-wrap' },
+        h('style', null, RECALL_CSS),
+        h('button', {
+          className: 'skrc-btn' + (state === 'ready' ? ' on' : ''),
+          title: '只读检索看板的相关条目：不注入模型、不花 token',
+          onClick: toggle
+        }, label),
+        panel
+      );
+    }
+
     function RailIcon(props) {
       const size = props && props.size ? props.size : 18;
       return h('svg', {
@@ -633,6 +737,13 @@ window.__ModuleLoader__.load({
           order: 20,
           label: '加入看板'
         }, CaptureAction));
+
+        ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
+          name: 'conversation.chat.assistant-actions',
+          id: 'saibo-recall',
+          order: 21,
+          label: '相关看板'
+        }, RecallAction));
       }
     };
   }

@@ -10,6 +10,8 @@ import { Store } from '../store.js';
 import { createTools } from '../tools.js';
 import { normalizeKinds, BoardError, buildCapture } from '../core.js';
 import { applyCapture } from '../index.js';
+import { buildIndex, searchIndex, queryTerms, estimateTokens, buildInjectText, hitView } from '../lib/recall.js';
+import { appendRecall, recallStats } from '../lib/recall-log.js';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saibo-kanban-'));
 const kinds = normalizeKinds(['task', 'decision', 'pitfall', 'design']);
@@ -226,7 +228,65 @@ await ok('删掉合并目标：来源条目恢复可见', async () => {
   assert.equal(list.items.length, 2);
   assert.equal(store.get(a.id).mergedInto, null);
   const lines = fs.readFileSync(path.join(dir, 'records.jsonl'), 'utf8').trim().split('\n').length;
-  assert.equal(lines, store.events);
+  assert.equal(store.events, lines);
+});
+
+await ok('召回：标题和正文同等命中，别名可展开', async () => {
+  const now = new Date().toISOString();
+  const items = new Map();
+  for (let i = 0; i < 40; i += 1) {
+    items.set('f' + i, {
+      id: 'f' + i, title: '占位条目 ' + i, body: '无关内容 ' + i,
+      status: 'done', kind: 'task', scope: '占位', rev: 1, updatedAt: now
+    });
+  }
+  items.set('r1', { id: 'r1', title: '前端打印 icon', body: '', status: 'in_progress', kind: 'task', scope: 'G5', rev: 2, updatedAt: now });
+  items.set('r2', { id: 'r2', title: '样式调整', body: '打印弹窗在小屏下错位', status: 'done', kind: 'pitfall', scope: 'G5', rev: 1, updatedAt: now });
+  items.set('r3', { id: 'r3', title: '图标风格统一', body: '', status: 'done', kind: 'task', scope: 'G15', rev: 1, updatedAt: now });
+  const index = buildIndex(items);
+  const byTitle = searchIndex(index, items, [{ text: '打印 icon 怎么修', weight: 1 }], { threshold: 1 });
+  assert.equal(byTitle[0].item.id, 'r1');
+  const byBody = searchIndex(index, items, [{ text: '小屏下错位', weight: 1 }], { threshold: 1 });
+  assert.equal(byBody[0].item.id, 'r2');
+  assert.equal(byBody[0].reason, '正文');
+  const byAlias = searchIndex(index, items, [{ text: 'icon 风格', weight: 1 }], { threshold: 1 });
+  assert.ok(byAlias.some(hit => hit.item.id === 'r3'), 'icon 应该通过别名命中「图标」');
+  assert.ok(queryTerms('icon').has('图标'));
+});
+
+await ok('召回：低分与命中文本', async () => {
+  const now = new Date().toISOString();
+  const items = new Map();
+  for (let i = 0; i < 40; i += 1) {
+    items.set('f' + i, {
+      id: 'f' + i, title: '占位条目 ' + i, body: '无关内容 ' + i,
+      status: 'done', kind: 'task', scope: '占位', rev: 1, updatedAt: now
+    });
+  }
+  items.set('r4', { id: 'r4', title: '物理删除条目', body: '删掉不能恢复', status: 'done', kind: 'task', scope: '导入', rev: 3, updatedAt: now });
+  const index = buildIndex(items);
+  const low = searchIndex(index, items, [{ text: '完全无关的话', weight: 1 }], { threshold: 1 });
+  assert.equal(low.length, 0);
+  const hits = searchIndex(index, items, [{ text: '物理删除', weight: 1 }], { threshold: 1 });
+  const views = hits.map(hit => hitView(hit, { revisionSummary: () => ({ rev: 3, time: now, by: 'human', note: '从对话加入看板' }) }));
+  const text = buildInjectText(views);
+  assert.match(text, /【看板·相关】/);
+  assert.match(text, /物理删除条目/);
+  assert.ok(estimateTokens(text) > 10);
+  assert.ok(estimateTokens(text) < text.length);
+});
+
+await ok('召回记录单独记账，不写进 records.jsonl', async () => {
+  const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'saibo-recall-'));
+  appendRecall(logDir, {
+    v: 1, recallId: 'rc-1', time: new Date().toISOString(),
+    sessionId: 's', messageId: 'm', terms: ['打印'], hitRows: 2, candidateRows: 4,
+    injectText: '【看板·相关】\n- 打印', injectTokens: 42, injected: false, actualTokens: 0
+  });
+  const stats = recallStats(logDir, 1);
+  assert.equal(stats.count, 1);
+  assert.equal(stats.injectTokens, 42);
+  assert.equal(fs.existsSync(path.join(logDir, 'records.jsonl')), false);
 });
 
 console.log(`\n全部通过：${passed} 项`);

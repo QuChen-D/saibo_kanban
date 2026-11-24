@@ -1,17 +1,32 @@
 /**
  * saibo-kanban — AI 与人共用的活看板。
  *
- * 0.3.0：六个工具 + 一个页面（收件箱 / 看板 / 表格）。
+ * 八个工具 + 一个页面（收件箱 / 看板 / 表格）+ 对话动作（加入看板 / 相关看板）。
  * 数据落在 $DSH_HOME/saibo_kanban/records.jsonl；页面通过 /saibo-kanban/api 读写。
- * 权限对等：人通过 UI、AI 通过工具，都走同一份 store 与规则；回滚兜底。
+ * 召回只读，单独记在 recall.jsonl，不注入对话（0 token）。
  */
 import { Store, defaultDataDir } from './store.js';
 import { createTools } from './tools.js';
 import { normalizeKinds, buildCapture, BoardError } from './core.js';
 import { readXlsxBuffer } from './lib/xlsx.js';
 import { buildImport, describeImport } from './lib/import-map.js';
+import {
+  buildIndex, searchIndex, hitView, buildInjectText, estimateTokens, queryTerms
+} from './lib/recall.js';
+import { appendRecall, recallStats } from './lib/recall-log.js';
 
 export const inject = ['tools', 'webServer'];
+
+/** 检索索引按 store 缓存；看板事件数变了才重建。 */
+const recallCache = new WeakMap();
+
+function recallIndexFor(store) {
+  const cached = recallCache.get(store);
+  if (cached && cached.rev === store.events) return cached.index;
+  const index = buildIndex(store.items);
+  recallCache.set(store, { rev: store.events, index });
+  return index;
+}
 
 const CAPTURE_HINT = [
   '看板（saibo-kanban）是这台机器上所有会话共用的活看板：人可以点开页面改、回滚。',
@@ -63,7 +78,7 @@ export function apply(ctx, config) {
       }
       try {
         const payload = await readJsonBody(req);
-        const result = dispatch(ctx, store, payload.method, payload.args || {});
+        const result = dispatch(ctx, store, settings, payload.method, payload.args || {});
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: true, result }));
       } catch (error) {
@@ -78,7 +93,7 @@ export function apply(ctx, config) {
   }), 'saibo-kanban: /saibo-kanban/api');
 }
 
-function dispatch(ctx, store, method, args) {
+function dispatch(ctx, store, settings, method, args) {
   switch (method) {
     case 'list': {
       const result = store.list({ limit: 2000 });
@@ -127,6 +142,12 @@ function dispatch(ctx, store, method, args) {
     }
     case 'capture': {
       return capture(ctx, store, args);
+    }
+    case 'recall': {
+      return recallTurn(ctx, store, args, settings);
+    }
+    case 'recall.stats': {
+      return recallStats(store.dataDir, Number.isFinite(args.days) ? args.days : 1);
     }
     default:
       throw new Error(`未知方法: ${method}`);
@@ -188,23 +209,27 @@ export function applyCapture(store, plan, source) {
   return { created, updated, existing };
 }
 
+/** 活会话的消息列表。 */
+function sessionMessages(ctx, sessionId) {
+  if (!sessionId) throw new BoardError('NO_SESSION', '缺少会话 id，读不到消息');
+  const sessions = ctx.get('sessions');
+  if (!sessions) throw new BoardError('NO_SESSIONS', '运行时没有会话服务');
+  const session = sessions.get(sessionId);
+  if (!session) throw new BoardError('NO_SESSION', '这个会话不在内存里了，请刷新页面再试');
+  try {
+    return session.deriveMessages();
+  } catch (error) {
+    throw new BoardError('NO_MESSAGES', '读取会话消息失败');
+  }
+}
+
 /** 从活会话里取出一条消息的纯文本。 */
 function resolveMessage(ctx, args) {
   if (typeof args.text === 'string' && args.text.trim()) {
     return { text: args.text, ref: null, message: null };
   }
   const sessionId = typeof args.sessionId === 'string' ? args.sessionId : '';
-  if (!sessionId) throw new BoardError('NO_SESSION', '缺少会话 id，读不到消息');
-  const sessions = ctx.get('sessions');
-  if (!sessions) throw new BoardError('NO_SESSIONS', '运行时没有会话服务');
-  const session = sessions.get(sessionId);
-  if (!session) throw new BoardError('NO_SESSION', '这个会话不在内存里了，请刷新页面再试');
-  let messages;
-  try {
-    messages = session.deriveMessages();
-  } catch (error) {
-    throw new BoardError('NO_MESSAGES', '读取会话消息失败');
-  }
+  const messages = sessionMessages(ctx, sessionId);
   const index = typeof args.messageId === 'string' && args.messageId
     ? messages.findIndex(m => m && m.id === args.messageId)
     : messages.length - 1;
@@ -215,6 +240,94 @@ function resolveMessage(ctx, args) {
     text: picked.text,
     ref: { type: 'session', ref: `${sessionId}#${picked.message.id}` },
     message: { id: picked.message.id, role: picked.message.role }
+  };
+}
+
+/** 取这一轮的用户消息 + 助手消息，供召回当查询。 */
+function resolveTurn(ctx, args) {
+  if (typeof args.text === 'string' && args.text.trim()) {
+    return { user: args.text, prevUser: '', assistant: '', messageId: '' };
+  }
+  const sessionId = typeof args.sessionId === 'string' ? args.sessionId : '';
+  const messages = sessionMessages(ctx, sessionId);
+  const start = typeof args.messageId === 'string' && args.messageId
+    ? messages.findIndex(m => m && m.id === args.messageId)
+    : messages.length - 1;
+  if (start < 0) throw new BoardError('NO_MESSAGE', '找不到这条消息');
+  const picked = pickTextMessage(messages, start);
+  const anchorIndex = picked ? messages.indexOf(picked.message) : start;
+  let user = '';
+  let prevUser = '';
+  let userIndex = -1;
+  for (let i = anchorIndex; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || message.role !== 'user') continue;
+    const text = messageText(message);
+    if (!text) continue;
+    user = text;
+    userIndex = i;
+    break;
+  }
+  for (let i = userIndex - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || message.role !== 'user') continue;
+    const text = messageText(message);
+    if (!text) continue;
+    prevUser = text;
+    break;
+  }
+  return {
+    user,
+    prevUser,
+    assistant: picked ? picked.text : '',
+    messageId: picked ? picked.message.id : ''
+  };
+}
+
+/** 只读召回：算一遍相关条目并记账，不注入模型。 */
+function recallTurn(ctx, store, args, settings) {
+  const turn = resolveTurn(ctx, args);
+  const parts = [];
+  if (turn.user) parts.push({ text: turn.user, weight: 1 });
+  if (turn.prevUser && turn.user.length < 8) parts.push({ text: turn.prevUser, weight: 0.7 });
+  if (turn.assistant) parts.push({ text: turn.assistant.slice(0, 1500), weight: 0.4 });
+
+  const threshold = Number.isFinite(settings.recallThreshold) ? settings.recallThreshold : 3;
+  const previewLimit = Number.isFinite(settings.recallPreviewLimit) ? settings.recallPreviewLimit : 5;
+  const injectLimit = Number.isFinite(settings.recallInjectLimit) ? settings.recallInjectLimit : 3;
+  const ranked = searchIndex(recallIndexFor(store), store.items, parts, { limit: previewLimit, threshold });
+  const views = ranked.map(hit => hitView(hit, store));
+  const injectText = buildInjectText(views, { limit: injectLimit });
+  const injectTokens = estimateTokens(injectText);
+  const terms = [...queryTerms(parts.map(part => part.text).join('\n')).keys()].slice(0, 12);
+  const hitRows = views.filter(view => view.reason !== '低分' && view.reason !== '泛词').length;
+  const recallId = `rc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+  appendRecall(store.dataDir, {
+    v: 1,
+    recallId,
+    time: new Date().toISOString(),
+    sessionId: typeof args.sessionId === 'string' ? args.sessionId : '',
+    messageId: turn.messageId || '',
+    terms,
+    hitRows,
+    candidateRows: views.length,
+    injectText,
+    injectTokens,
+    injected: false,
+    actualTokens: 0
+  });
+
+  return {
+    recallId,
+    messageId: turn.messageId,
+    query: { user: turn.user.slice(0, 120), terms },
+    views,
+    threshold,
+    injectText,
+    injectTokens,
+    displayTokens: 0,
+    stats: recallStats(store.dataDir, 1)
   };
 }
 

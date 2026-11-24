@@ -34,12 +34,14 @@ export class Store {
     this.file = path.join(this.dataDir, FILE_NAME);
     this.kinds = options.kinds;
     this.items = new Map();
+    this.meta = new Map();
     this.events = 0;
     this.badLines = 0;
   }
 
   load() {
     this.items.clear();
+    this.meta.clear();
     this.events = 0;
     this.badLines = 0;
     if (!fs.existsSync(this.file)) return this;
@@ -54,8 +56,22 @@ export class Store {
       if (!current || current.rev <= event.item.rev) {
         this.items.set(event.item.id, event.item);
       }
+      this.noteEvent(event);
     }
     return this;
+  }
+
+  /** 记住每条最近一次修订的元信息，供检索结果附历史行。 */
+  noteEvent(event) {
+    if (!event || !event.item || !event.item.id) return;
+    const prev = this.meta.get(event.item.id);
+    if (prev && prev.rev > event.rev) return;
+    this.meta.set(event.item.id, {
+      rev: event.rev,
+      time: event.time,
+      by: event.by === 'human' ? 'human' : 'ai',
+      note: typeof event.note === 'string' ? event.note : ''
+    });
   }
 
   append(event) {
@@ -70,6 +86,7 @@ export class Store {
     }
     this.events += 1;
     this.items.set(event.item.id, event.item);
+    this.noteEvent(event);
   }
 
   get(id) {
@@ -356,6 +373,11 @@ export class Store {
       archived: all.filter(i => i.archived).length,
       rev: this.events
     };
+  }
+
+  /** 最近一次修订的摘要（不扫文件，load/append 时已记下）。 */
+  revisionSummary(id) {
+    return this.meta.get(id) || null;
   }
 
   /** 读取某个条目的完整修订历史（直接扫文件，不改内存）。 */
