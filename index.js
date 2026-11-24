@@ -1,13 +1,13 @@
 /**
  * saibo-kanban — AI 与人共用的活看板。
  *
- * 八个工具 + 一个页面（收件箱 / 看板 / 表格）+ 对话动作（加入看板 / 相关看板）。
+ * 八个工具 + 一个页面（收件箱 / 看板 / 表格）+ 对话动作（加入看板 / 相关看板 / 本轮改动）。
  * 数据落在 $DSH_HOME/saibo_kanban/records.jsonl；页面通过 /saibo-kanban/api 读写。
- * 召回只读，单独记在 recall.jsonl，不注入对话（0 token）。
+ * 每轮把相关条目附在用户消息末尾（只进请求，不落历史），轮末记下改动供人回滚。
  */
 import { Store, defaultDataDir } from './store.js';
 import { createTools } from './tools.js';
-import { normalizeKinds, buildCapture, BoardError } from './core.js';
+import { normalizeKinds, buildCapture, BoardError, STATUSES } from './core.js';
 import { readXlsxBuffer } from './lib/xlsx.js';
 import { buildImport, describeImport } from './lib/import-map.js';
 import {
@@ -16,6 +16,8 @@ import {
 import { appendRecall, recallStats } from './lib/recall-log.js';
 
 export const inject = ['tools', 'webServer'];
+
+const STATUS_LABEL = new Map(STATUSES.map(s => [s.id, s.label]));
 
 /** 检索索引按 store 缓存；看板事件数变了才重建。 */
 const recallCache = new WeakMap();
@@ -40,6 +42,12 @@ const CAPTURE_HINT = [
   '没有值得落板的结果就不要写这个块；也不要主动调用 board_record，除非用户明确要求直接写入。'
 ].join('\n');
 
+const BOARD_WORK_HINT = [
+  '看板协作：这轮对话和看板条目相关时，用户消息末尾会附一段「看板·本轮到相关」（系统自动附加，不是用户说的话）。',
+  '如果这轮工作让其中某条的状态、内容或补充说明发生了变化，直接用 board_update 改（带上列表里的 id 和 r 号），note 写清依据；改完在回复末尾用一行列出改动。',
+  '没有变化就不要动；不要自己遍历看板，也不要为了确认去全量读取。'
+].join('\n');
+
 export function apply(ctx, config) {
   const settings = config && typeof config === 'object' ? config : {};
   const dataDir = typeof settings.dataDir === 'string' && settings.dataDir.trim()
@@ -47,6 +55,7 @@ export function apply(ctx, config) {
     : defaultDataDir();
   const kinds = normalizeKinds(settings.kinds);
   const store = new Store({ dataDir, kinds }).load();
+  const turnState = new Map();
   const tools = createTools(store, {
     kinds,
     maxBriefChars: Number.isFinite(settings.maxBriefChars) ? settings.maxBriefChars : 4000
@@ -64,7 +73,42 @@ export function apply(ctx, config) {
         order: 640,
         text: CAPTURE_HINT
       }), 'saibo-kanban: 看板写入约定');
+      ctx.effect(() => prompt.section({
+        name: 'saibo-kanban:work',
+        order: 641,
+        text: BOARD_WORK_HINT
+      }), 'saibo-kanban: 看板协作约定');
     }
+  }
+
+  // 每轮开始时记录起点，轮末算出这轮改了哪些条目。
+  ctx.effect(() => ctx.on('session/event', (session, event) => {
+    try { trackTurn(store, turnState, session, event); } catch { /* 不影响对话 */ }
+  }), 'saibo-kanban: 轮次跟踪');
+
+  if (settings.recallInject !== false) {
+    // 用户消息进入这一步前，把相关条目附在消息末尾（只在请求里，不写会话历史）。
+    ctx.effect(() => ctx.on('agent/pre-step', async (payload, next) => {
+      const decision = await next();
+      try {
+        if (!decision || decision.kind !== 'enter') return decision;
+        const sessions = ctx.get('sessions');
+        const session = sessions && payload.agent ? sessions.get(payload.agent.id) : undefined;
+        const header = session && session.header;
+        if (header && (header.origin === 'subagent' || (header.delegationDepth || 0) > 0)) return decision;
+        const block = buildTurnBlock(store, payload, settings);
+        if (!block) return decision;
+        const messages = Array.isArray(decision.messages) ? decision.messages : [];
+        const last = messages[messages.length - 1];
+        if (!last || last.role !== 'user') return decision;
+        const content = Array.isArray(last.content) ? last.content.slice() : [];
+        content.push({ type: 'text', text: block });
+        const clone = { ...last, content };
+        return { ...decision, messages: [...messages.slice(0, -1), clone] };
+      } catch {
+        return decision;
+      }
+    }), 'saibo-kanban: 相关条目注入');
   }
 
   ctx.effect(() => ctx.webServer.register({
@@ -78,7 +122,7 @@ export function apply(ctx, config) {
       }
       try {
         const payload = await readJsonBody(req);
-        const result = dispatch(ctx, store, settings, payload.method, payload.args || {});
+        const result = dispatch(ctx, store, settings, turnState, payload.method, payload.args || {});
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: true, result }));
       } catch (error) {
@@ -93,7 +137,7 @@ export function apply(ctx, config) {
   }), 'saibo-kanban: /saibo-kanban/api');
 }
 
-function dispatch(ctx, store, settings, method, args) {
+function dispatch(ctx, store, settings, turnState, method, args) {
   switch (method) {
     case 'list': {
       const result = store.list({ limit: 2000 });
@@ -148,6 +192,15 @@ function dispatch(ctx, store, settings, method, args) {
     }
     case 'recall.stats': {
       return recallStats(store.dataDir, Number.isFinite(args.days) ? args.days : 1);
+    }
+    case 'turn.changes': {
+      const sessionId = typeof args.sessionId === 'string' ? args.sessionId : '';
+      const state = turnState.get(sessionId);
+      if (!state || !Array.isArray(state.changes) || state.changes.length === 0) return { changes: [] };
+      if (args.messageId && state.lastAssistantId && args.messageId !== state.lastAssistantId) {
+        return { changes: [] };
+      }
+      return { messageId: state.lastAssistantId, changes: state.changes };
     }
     default:
       throw new Error(`未知方法: ${method}`);
@@ -294,7 +347,7 @@ function recallTurn(ctx, store, args, settings) {
 
   const threshold = Number.isFinite(settings.recallThreshold) ? settings.recallThreshold : 3;
   const previewLimit = Number.isFinite(settings.recallPreviewLimit) ? settings.recallPreviewLimit : 5;
-  const injectLimit = Number.isFinite(settings.recallInjectLimit) ? settings.recallInjectLimit : 3;
+  const injectLimit = Number.isFinite(settings.recallInjectLimit) ? settings.recallInjectLimit : 4;
   const ranked = searchIndex(recallIndexFor(store), store.items, parts, { limit: previewLimit, threshold });
   const views = ranked.map(hit => hitView(hit, store));
   const injectText = buildInjectText(views, { limit: injectLimit });
@@ -332,10 +385,123 @@ function recallTurn(ctx, store, args, settings) {
 }
 
 /**
+ * 把相关条目附到这一轮用户消息末尾（只进请求，不写会话历史）。
+ * 返回要附加的文本；没有相关条目就返回空串。
+ */
+export function buildTurnBlock(store, payload, settings) {
+  const messages = payload && Array.isArray(payload.messages) ? payload.messages : [];
+  const last = messages[messages.length - 1];
+  if (!last) return '';
+  const text = messageText(last);
+  if (!text || text.length < 4) return '';
+  const limit = Number.isFinite(settings.recallInjectLimit) ? settings.recallInjectLimit : 4;
+  const threshold = Number.isFinite(settings.recallThreshold) ? settings.recallThreshold : 3;
+  let hits;
+  try {
+    hits = searchIndex(recallIndexFor(store), store.items, [{ text, weight: 1 }], { limit, threshold });
+  } catch {
+    return '';
+  }
+  if (!hits || hits.length === 0) return '';
+  const lines = ['【看板·本轮到相关】（系统自动附加，不是用户的话）'];
+  for (const hit of hits) {
+    const item = hit.item;
+    lines.push(`- ${item.title}｜${STATUS_LABEL.get(item.status) || item.status}｜r${item.rev}｜${item.scope || '未定'}`);
+  }
+  const block = lines.join('\n');
+  try {
+    const injectTokens = estimateTokens(block);
+    appendRecall(store.dataDir, {
+      v: 1,
+      recallId: `rc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      time: new Date().toISOString(),
+      sessionId: payload.agent ? payload.agent.id : '',
+      messageId: last.id || '',
+      terms: [],
+      hitRows: hits.length,
+      candidateRows: hits.length,
+      injectText: block,
+      injectTokens,
+      injected: true,
+      actualTokens: injectTokens
+    });
+  } catch { /* 记账失败不影响对话 */ }
+  return block;
+}
+
+/** 记录每轮起点、最后一条助手消息，轮末算改动。 */
+function trackTurn(store, turnState, session, event) {
+  if (!session || !event) return;
+  const sessionId = session.id;
+  if (event.type === 'user/message') {
+    turnState.set(sessionId, { startTime: Date.now(), lastAssistantId: '', changes: [] });
+    return;
+  }
+  if (event.type === 'assistant/message') {
+    const state = turnState.get(sessionId) || { startTime: Date.now(), lastAssistantId: '', changes: [] };
+    const message = event.data && event.data.message;
+    state.lastAssistantId = message && message.id ? message.id : state.lastAssistantId;
+    turnState.set(sessionId, state);
+    return;
+  }
+  if (event.type === 'turn/end') {
+    const state = turnState.get(sessionId) || { startTime: Date.now(), lastAssistantId: '', changes: [] };
+    state.changes = collectChanges(store, state.startTime);
+    state.endedAt = Date.now();
+    turnState.set(sessionId, state);
+    if (turnState.size > 60) {
+      const oldest = turnState.keys().next().value;
+      if (oldest !== sessionId) turnState.delete(oldest);
+    }
+  }
+}
+
+/** 找出这轮（起点之后）改过的条目，附上上一版状态供回滚。 */
+export function collectChanges(store, since) {
+  const out = [];
+  for (const [id, item] of store.items) {
+    const meta = store.meta.get(id);
+    const time = meta ? Date.parse(meta.time) : NaN;
+    if (!Number.isFinite(time) || time < since) continue;
+    const created = Date.parse(item.createdAt) >= since;
+    let previousRev = null;
+    let from = null;
+    if (!created) {
+      previousRev = item.rev - 1;
+      try {
+        const prev = previousRev > 0 ? store.revision(id, previousRev) : null;
+        if (prev) {
+          from = {
+            status: prev.status,
+            title: prev.title,
+            body: String(prev.body || '').slice(0, 200)
+          };
+        }
+      } catch { /* 忽略回读失败 */ }
+    }
+    out.push({
+      id,
+      title: item.title,
+      kind: item.kind,
+      scope: item.scope,
+      status: item.status,
+      statusLabel: STATUS_LABEL.get(item.status) || item.status,
+      rev: item.rev,
+      previousRev,
+      created,
+      from,
+      note: meta ? meta.note : '',
+      time: meta ? meta.time : ''
+    });
+  }
+  out.sort((a, b) => String(b.time).localeCompare(String(a.time)));
+  return out;
+}
+
+/**
  * 从 from 往前找第一条有文字的助手消息。
  * 工具调用步骤没有文字，点它的「＋ 看板」时落到前面最近的答复上。
- */
-function pickTextMessage(messages, from) {
+ */function pickTextMessage(messages, from) {
   for (let i = from; i >= 0; i -= 1) {
     const message = messages[i];
     if (!message || message.role !== 'assistant') continue;

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { Store } from '../store.js';
 import { createTools } from '../tools.js';
 import { normalizeKinds, BoardError, buildCapture } from '../core.js';
-import { applyCapture } from '../index.js';
+import { applyCapture, collectChanges, buildTurnBlock } from '../index.js';
 import { buildIndex, searchIndex, queryTerms, estimateTokens, buildInjectText, hitView } from '../lib/recall.js';
 import { appendRecall, recallStats } from '../lib/recall-log.js';
 
@@ -287,6 +287,33 @@ await ok('召回记录单独记账，不写进 records.jsonl', async () => {
   assert.equal(stats.count, 1);
   assert.equal(stats.injectTokens, 42);
   assert.equal(fs.existsSync(path.join(logDir, 'records.jsonl')), false);
+});
+
+await ok('注入块：相关条目带 id 和修订号', async () => {
+  const payload = {
+    messages: [{
+      id: 'm-inject',
+      role: 'user',
+      content: [{ type: 'text', text: '把打印图标那件事收尾' }]
+    }]
+  };
+  const block = buildTurnBlock(store, payload, { recallThreshold: 1, recallInjectLimit: 4 });
+  assert.match(block, /看板·本轮到相关/);
+  assert.match(block, /r\d/);
+  assert.match(block, /打印/);
+});
+
+await ok('轮内改动：能拿到旧状态和回滚点', async () => {
+  const it = store.record({ title: '轮内改动测试', kind: 'task', status: 'in_progress' }, { by: 'ai' });
+  const since = Date.now();
+  store.update(it.id, { status: 'done' }, { by: 'ai', expectedRev: it.rev, note: '这轮做完了' });
+  const changes = collectChanges(store, since);
+  const hit = changes.find(change => change.id === it.id);
+  assert.ok(hit, '应该能抓到这条改动');
+  assert.equal(hit.from.status, 'in_progress');
+  assert.equal(hit.status, 'done');
+  assert.equal(hit.previousRev, 1);
+  assert.equal(hit.note, '这轮做完了');
 });
 
 console.log(`\n全部通过：${passed} 项`);

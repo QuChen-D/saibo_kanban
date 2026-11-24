@@ -577,6 +577,24 @@ window.__ModuleLoader__.load({
       .skrc-err { color:var(--dsw-alias-state-error-primary,#dc2626); }
     `;
 
+    const CHANGE_CSS = `
+      .sktc-wrap { display:inline-flex; align-items:center; }
+      .sktc-btn-main { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:var(--dsw-alias-label-secondary,#6b7280); border-radius:6px; padding:1px 8px; font:inherit; font-size:12px; line-height:20px; cursor:pointer; white-space:nowrap; }
+      .sktc-btn-main:hover { color:var(--dsw-alias-label-primary,#17181a); border-color:var(--dsw-alias-border-l2,#c9ccd3); }
+      .sktc-panel { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); width:min(520px,92vw); max-height:60vh; overflow:auto; background:var(--dsw-alias-bg-overlay,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:12px; box-shadow:0 18px 48px rgba(16,24,40,.24); padding:12px 14px; z-index:60; font-size:12px; line-height:1.55; color:var(--dsw-alias-label-primary,#17181a); }
+      .sktc-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+      .sktc-head b { font-size:13px; }
+      .sktc-meta { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
+      .sktc-x { margin-left:auto; border:0; background:transparent; color:var(--dsw-alias-label-secondary,#6b7280); cursor:pointer; font:inherit; font-size:12px; }
+      .sktc-row { padding:7px 0; border-bottom:1px dashed var(--dsw-alias-border-l1,#f0f1f4); }
+      .sktc-row:last-child { border-bottom:0; }
+      .sktc-title { font-weight:600; }
+      .sktc-sub { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; margin-top:2px; }
+      .sktc-actions { margin-top:6px; display:flex; gap:6px; justify-content:flex-end; }
+      .sktc-btn { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; border-radius:6px; padding:2px 9px; font:inherit; font-size:11.5px; cursor:pointer; }
+      .sktc-btn:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); }
+    `;
+
     /** 助手消息动作：一键把这条消息加入全局看板（范围/类型/状态由 AI 在消息里给出）。 */
     function CaptureAction(props) {
       const [phase, setPhase] = useState('idle');
@@ -710,6 +728,82 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** 本轮看板改动：AI 顺手改了哪些条目，给用户看一眼，可回滚/删除。 */
+    function TurnChangesAction(props) {
+      const [data, setData] = useState(null);
+      const [open, setOpen] = useState(false);
+      const sessionId = props && props.sessionId ? props.sessionId : '';
+      const messageId = props && props.messageId ? props.messageId : '';
+
+      useEffect(() => {
+        let alive = true;
+        api('turn.changes', { sessionId, messageId })
+          .then(result => {
+            if (alive && result && Array.isArray(result.changes) && result.changes.length > 0) setData(result);
+          })
+          .catch(() => {});
+        return () => { alive = false; };
+      }, [sessionId, messageId]);
+
+      const drop = useCallback(id => setData(current => {
+        if (!current) return current;
+        return {
+          ...current,
+          changes: (current.changes || []).filter(change => change.id !== id)
+        };
+      }), []);
+
+      const revert = useCallback(change => {
+        if (!change || !change.previousRev) return;
+        api('rollback', { id: change.id, rev: change.previousRev })
+          .then(() => drop(change.id))
+          .catch(() => {});
+      }, [drop]);
+
+      const removeIt = useCallback(change => {
+        if (!change) return;
+        api('delete', { id: change.id })
+          .then(() => drop(change.id))
+          .catch(() => {});
+      }, [drop]);
+
+      const changes = (data && data.changes) || [];
+      if (changes.length === 0) return null;
+
+      const panel = open ? h('div', { className: 'sktc-panel' },
+        h('div', { className: 'sktc-head' },
+          h('b', null, '本轮看板改动'),
+          h('span', { className: 'sktc-meta' }, '默认保留；可回滚或删除'),
+          h('button', { className: 'sktc-x', onClick: () => setOpen(false) }, '关闭')
+        ),
+        changes.map(change => h('div', { key: change.id, className: 'sktc-row' },
+          h('div', { className: 'sktc-title' }, change.title),
+          h('div', { className: 'sktc-sub' },
+            change.created
+              ? '新建 · ' + change.statusLabel
+              : (change.from && change.from.status !== change.status
+                ? (STATUSES.find(s => s.id === change.from.status) || { label: change.from.status }).label + ' → ' + change.statusLabel
+                : '内容更新 · ' + change.statusLabel),
+            change.note ? ' · ' + change.note : ''),
+          h('div', { className: 'sktc-actions' },
+            change.created
+              ? h('button', { className: 'sktc-btn', onClick: () => removeIt(change) }, '删除')
+              : h('button', { className: 'sktc-btn', onClick: () => revert(change) }, '回滚')
+          )
+        ))
+      ) : null;
+
+      return h('span', { className: 'sktc-wrap' },
+        h('style', null, CHANGE_CSS),
+        h('button', {
+          className: 'sktc-btn-main',
+          title: '本轮看板改动',
+          onClick: () => setOpen(value => !value)
+        }, '改动 ' + changes.length),
+        panel
+      );
+    }
+
     function RailIcon(props) {
       const size = props && props.size ? props.size : 18;
       return h('svg', {
@@ -744,6 +838,13 @@ window.__ModuleLoader__.load({
           order: 21,
           label: '相关看板'
         }, RecallAction));
+
+        ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
+          name: 'conversation.chat.assistant-actions',
+          id: 'saibo-changes',
+          order: 22,
+          label: '看板改动'
+        }, TurnChangesAction));
       }
     };
   }

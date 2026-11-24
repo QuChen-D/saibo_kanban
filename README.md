@@ -89,7 +89,14 @@ AI 在回复末尾写一个 `board` 代码块来声明要落板的内容，一�
 检索规则：标题与正文同权，范围不参与打分，别名（icon/图标、done/完成、回滚/恢复…）自动展开。
 
 参数（`cordis.patch.yml` 的 config）：`recallThreshold`（默认 3，过线才算命中）、
-`recallPreviewLimit`（默认 5，展示几条）、`recallInjectLimit`（默认 3，若注入取几条）。
+`recallPreviewLimit`（默认 5，展示几条）、`recallInjectLimit`（默认 4，自动附几条）。
+
+**对话顺手改看板（0.7.2）**
+
+每轮开始，宿主把相关条目（最多 4 条，带 id 和修订号）附在这轮用户消息末尾——只进本次请求，不写会话历史。
+AI 看到后，如果这轮让某条的状态 / 内容 / 补充说明变了，直接 `board_update`，不用遍历看板。
+回复下方会出现「改动 N」：列出这轮改了哪些条目，可单条回滚或删除；不操作就是默认保留。
+配置 `recallInject: false` 可关掉自动附加。
 
 **CLI**
 
