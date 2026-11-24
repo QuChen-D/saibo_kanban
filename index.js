@@ -87,13 +87,20 @@ export function apply(ctx, config) {
   }), 'saibo-kanban: 轮次跟踪');
 
   if (settings.recallInject !== false) {
+    const injectedMessages = new Map();
     // 用户消息进入这一步前，把相关条目附在消息末尾（只在请求里，不写会话历史）。
     ctx.effect(() => ctx.on('agent/pre-step', async (payload, next) => {
       const decision = await next();
       try {
         if (!decision || decision.kind !== 'enter') return decision;
+        const incoming = payload && Array.isArray(payload.messages)
+          ? payload.messages[payload.messages.length - 1]
+          : null;
+        if (!incoming || incoming.role !== 'user') return decision;
+        const sessionId = payload.agent ? payload.agent.id : '';
+        if (sessionId && injectedMessages.get(sessionId) === incoming.id) return decision;
         const sessions = ctx.get('sessions');
-        const session = sessions && payload.agent ? sessions.get(payload.agent.id) : undefined;
+        const session = sessions && sessionId ? sessions.get(sessionId) : undefined;
         const header = session && session.header;
         if (header && (header.origin === 'subagent' || (header.delegationDepth || 0) > 0)) return decision;
         const block = buildTurnBlock(store, payload, settings);
@@ -104,6 +111,7 @@ export function apply(ctx, config) {
         const content = Array.isArray(last.content) ? last.content.slice() : [];
         content.push({ type: 'text', text: block });
         const clone = { ...last, content };
+        if (sessionId) injectedMessages.set(sessionId, incoming.id);
         return { ...decision, messages: [...messages.slice(0, -1), clone] };
       } catch {
         return decision;
