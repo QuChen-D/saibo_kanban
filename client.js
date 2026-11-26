@@ -117,7 +117,6 @@ window.__ModuleLoader__.load({
       .sk-h .chg { color:var(--dsw-alias-label-secondary,#6b7280); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .sk-toast { position:absolute; left:50%; bottom:18px; transform:translateX(-50%); background:var(--dsw-alias-label-primary,#17181a); color:var(--dsw-alias-bg-base,#fff); padding:8px 14px; border-radius:9px; font-size:12.5px; z-index:9; }
       .sk-empty { padding:40px; text-align:center; color:var(--dsw-alias-label-secondary,#6b7280); }
-      .sk-rail { display:flex; align-items:center; justify-content:center; }
       .sk-modal { position:absolute; inset:0; background:rgba(15,18,25,.35); display:flex; align-items:center; justify-content:center; z-index:8; }
       .sk-dialog { width:min(520px,92%); background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:12px; box-shadow:0 18px 48px rgba(16,24,40,.22); padding:16px; display:flex; flex-direction:column; gap:10px; }
       .sk-dialog h3 { margin:0; font-size:15px; }
@@ -549,7 +548,7 @@ window.__ModuleLoader__.load({
       .skrc-btn { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:var(--dsw-alias-label-secondary,#6b7280); border-radius:6px; padding:1px 8px; font:inherit; font-size:12px; line-height:20px; cursor:pointer; white-space:nowrap; }
       .skrc-btn:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); color:var(--dsw-alias-label-primary,#17181a); }
       .skrc-btn.on { color:var(--dsw-alias-brand-primary,#2563eb); border-color:var(--dsw-alias-brand-primary,#2563eb); }
-      .skrc-panel { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); width:min(560px,92vw); max-height:64vh; overflow:auto; background:var(--dsw-alias-bg-overlay,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:12px; box-shadow:0 18px 48px rgba(16,24,40,.24); padding:12px 14px; z-index:60; font-size:12px; line-height:1.55; color:var(--dsw-alias-label-primary,#17181a); }
+      .skrc-panel { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); width:min(560px,92vw); max-height:64vh; overflow:auto; pointer-events:auto; background:var(--dsw-alias-bg-overlay,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:12px; box-shadow:0 18px 48px rgba(16,24,40,.24); padding:12px 14px; z-index:60; font-size:12px; line-height:1.55; color:var(--dsw-alias-label-primary,#17181a); }
       .skrc-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
       .skrc-head b { font-size:13px; }
       .skrc-meta { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
@@ -561,13 +560,12 @@ window.__ModuleLoader__.load({
       .skrc-score { margin-left:auto; font-weight:500; color:var(--dsw-alias-label-secondary,#6b7280); }
       .skrc-sub { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; margin-top:2px; }
       .skrc-hist { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; margin-top:1px; }
-      .skrc-inject { margin-top:10px; border-top:1px solid var(--dsw-alias-border-l1,#e6e7eb); padding-top:8px; }
-      .skrc-pre { margin:6px 0 0; padding:8px; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:8px; white-space:pre-wrap; font-family:ui-monospace,Consolas,monospace; font-size:11.5px; }
+      .skrc-sect { display:flex; align-items:baseline; gap:8px; margin:10px 0 4px; padding-bottom:4px; border-bottom:1px solid var(--dsw-alias-border-l1,#e6e7eb); font-size:11.5px; font-weight:650; color:var(--dsw-alias-label-secondary,#6b7280); }
+      .skrc-sect:first-child { margin-top:0; }
+      .skrc-sect-x { margin-left:auto; font-weight:500; }
       .skrc-stats { margin-top:8px; color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
       .skrc-empty { color:var(--dsw-alias-label-secondary,#6b7280); }
       .skrc-err { color:var(--dsw-alias-state-error-primary,#dc2626); }
-      .skrc-block { border-bottom:1px solid var(--dsw-alias-border-l1,#e6e7eb); margin-bottom:8px; padding-bottom:6px; }
-      .skrc-block-title { font-weight:600; color:var(--dsw-alias-brand-primary,#2563eb); margin-bottom:2px; }
       .skrc-change-actions { display:flex; gap:6px; justify-content:flex-end; margin-top:4px; }
       .skrc-btn-sm { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; border-radius:6px; padding:1px 8px; font:inherit; font-size:11.5px; cursor:pointer; }
       .skrc-btn-sm:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); }
@@ -577,45 +575,108 @@ window.__ModuleLoader__.load({
       .skrc-editor-row { display:flex; gap:6px; }
     `;
 
-    /** kanban 弹窗：本轮相关条目 + 本轮 AI 改过的看板项，可就地编辑/回滚。 */
+    /** 弹窗状态在所有 kanban 入口之间共享：按钮负责打开，根级浮层负责渲染。 */
+    const overlayStore = {
+      open: false,
+      status: 'idle',
+      data: null,
+      changes: [],
+      sessionId: '',
+      messageId: ''
+    };
+    const overlayListeners = new Set();
+
+    function overlayPatch(patch) {
+      Object.assign(overlayStore, patch);
+      for (const listener of Array.from(overlayListeners)) listener();
+    }
+
+    function useOverlayStore() {
+      const [, bump] = useState(0);
+      useEffect(() => {
+        const listener = () => bump(value => value + 1);
+        overlayListeners.add(listener);
+        return () => { overlayListeners.delete(listener); };
+      }, []);
+      return overlayStore;
+    }
+
+    const statusText = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
+
+    /** 助手消息旁的动作：打开共享的看板弹窗。 */
     function RecallAction(props) {
-      const [state, setState] = useState('idle');
-      const [data, setData] = useState(null);
-      const [changes, setChanges] = useState([]);
-      const [open, setOpen] = useState(false);
-      const [editing, setEditing] = useState(null);
-      const [saving, setSaving] = useState(false);
+      const store = useOverlayStore();
       const sessionId = props && props.sessionId ? props.sessionId : '';
       const messageId = props && props.messageId ? props.messageId : '';
-
-      const statusText = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
+      const mine = store.sessionId === sessionId && store.messageId === messageId;
 
       const load = useCallback(() => {
-        if (state === 'busy') return;
-        setState('busy');
+        if (overlayStore.status === 'busy') return;
+        overlayPatch({ status: 'busy', sessionId, messageId });
         Promise.all([
           api('recall', { sessionId, messageId }),
           api('turn.changes', { sessionId, messageId }).catch(() => ({ changes: [] }))
         ]).then(([recallResult, changeResult]) => {
-          setData(recallResult);
-          setChanges(changeResult && Array.isArray(changeResult.changes) ? changeResult.changes : []);
-          setState('ready');
-          setOpen(true);
+          overlayPatch({
+            status: 'ready',
+            data: recallResult,
+            changes: changeResult && Array.isArray(changeResult.changes) ? changeResult.changes : [],
+            open: true
+          });
         }).catch(error => {
-          setData({ error: error && error.message ? error.message : '检索失败' });
-          setState('err');
-          setOpen(true);
+          overlayPatch({
+            status: 'err',
+            data: { error: error && error.message ? error.message : '检索失败' },
+            changes: [],
+            open: true
+          });
         });
-      }, [state, sessionId, messageId]);
+      }, [sessionId, messageId]);
 
       const toggle = useCallback(event => {
         if (event && event.stopPropagation) event.stopPropagation();
-        if (state === 'idle' || state === 'err') { load(); return; }
-        setOpen(value => !value);
-      }, [state, load]);
+        if (!mine || overlayStore.status === 'idle' || overlayStore.status === 'err') { load(); return; }
+        overlayPatch({ open: !overlayStore.open });
+      }, [mine, load]);
+
+      const views = (mine && store.data && store.data.views) || [];
+      const hits = views.filter(view => view.reason !== '低分' && view.reason !== '泛词').length;
+      const label = mine && store.status === 'busy' ? '…'
+        : mine && store.status === 'ready' ? ('kanban ' + hits + '/' + views.length)
+          : 'kanban';
+
+      return h('span', { className: 'skrc-wrap' },
+        h('style', null, RECALL_CSS),
+        h('button', {
+          type: 'button',
+          className: 'skrc-btn' + (mine && store.status === 'ready' && store.open ? ' on' : ''),
+          title: '看板',
+          onClick: toggle
+        }, label)
+      );
+    }
+
+    /** 根级浮层里的弹窗：不进聊天的滚动容器，所以不会被裁剪或跟着布局抖。 */
+    function RecallOverlay() {
+      const store = useOverlayStore();
+      const [editing, setEditing] = useState(null);
+      const [saving, setSaving] = useState(false);
+      const data = store.data;
+      const changes = store.changes;
+
+      useEffect(() => {
+        if (!store.open) setEditing(null);
+      }, [store.open]);
+
+      useEffect(() => {
+        if (!store.open) return undefined;
+        const onKey = event => { if (event.key === 'Escape') overlayPatch({ open: false }); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [store.open]);
 
       const dropChange = useCallback(id => {
-        setChanges(current => current.filter(change => change.id !== id));
+        overlayPatch({ changes: overlayStore.changes.filter(change => change.id !== id) });
       }, []);
 
       const revertChange = useCallback((event, change) => {
@@ -634,20 +695,17 @@ window.__ModuleLoader__.load({
           .catch(() => {});
       }, [dropChange]);
 
-      const startEdit = useCallback((event, source, item) => {
+      const startEdit = useCallback((event, item) => {
         if (event && event.stopPropagation) event.stopPropagation();
         if (!item || !item.id) return;
         api('get', { id: item.id })
-          .then(result => {
-            setEditing({
-              source,
-              id: item.id,
-              rev: result.item.rev,
-              title: result.item.title,
-              status: result.item.status,
-              body: result.item.body || ''
-            });
-          })
+          .then(result => setEditing({
+            id: item.id,
+            rev: result.item.rev,
+            title: result.item.title,
+            status: result.item.status,
+            body: result.item.body || ''
+          }))
           .catch(() => {});
       }, []);
 
@@ -660,28 +718,28 @@ window.__ModuleLoader__.load({
           patch: { title: editing.title, status: editing.status, body: editing.body }
         }).then(result => {
           const item = result.item;
-          setData(current => {
-            if (!current || !Array.isArray(current.views)) return current;
-            return {
-              ...current,
-              views: current.views.map(view => view.id === item.id
-                ? { ...view, title: item.title, status: item.status, statusLabel: statusText(item.status), rev: item.rev }
-                : view)
-            };
+          const base = overlayStore.data;
+          overlayPatch({
+            data: base && Array.isArray(base.views)
+              ? {
+                ...base,
+                views: base.views.map(view => view.id === item.id
+                  ? { ...view, title: item.title, status: item.status, statusLabel: statusText(item.status), rev: item.rev }
+                  : view)
+              }
+              : base,
+            changes: overlayStore.changes.map(change => change.id === item.id
+              ? { ...change, title: item.title, status: item.status, statusLabel: statusText(item.status), rev: item.rev, note: '人在弹窗里编辑' }
+              : change)
           });
-          setChanges(current => current.map(change => change.id === item.id
-            ? { ...change, title: item.title, status: item.status, statusLabel: statusText(item.status), rev: item.rev, note: '人在弹窗里编辑' }
-            : change));
           setEditing(null);
         }).catch(() => {}).finally(() => setSaving(false));
       }, [editing, saving]);
 
-      const views = (data && data.views) || [];
-      const hitCount = views.filter(view => view.reason !== '低分' && view.reason !== '泛词').length;
-      const label = state === 'busy' ? '…'
-        : state === 'ready' ? ('kanban ' + hitCount + '/' + views.length)
-          : 'kanban';
-      const stats = (data && data.stats) || null;
+      if (!store.open || !data) return null;
+
+      const views = data.views || [];
+      const stats = data.stats || null;
 
       const editor = () => h('div', { className: 'skrc-editor' },
         h('input', {
@@ -708,6 +766,11 @@ window.__ModuleLoader__.load({
         )
       );
 
+      const section = (text, extra) => h('div', { className: 'skrc-sect' },
+        h('span', null, text),
+        extra ? h('span', { className: 'skrc-sect-x' }, extra) : null
+      );
+
       const changeRow = (change, index) => h('div', { key: change.id || ('c' + index), className: 'skrc-row' },
         h('div', { className: 'skrc-title' }, change.title),
         h('div', { className: 'skrc-sub' },
@@ -718,7 +781,7 @@ window.__ModuleLoader__.load({
               : '内容更新 · ' + change.statusLabel))
           + (change.note ? ' · ' + change.note : '')),
         editing && editing.id === change.id ? editor() : h('div', { className: 'skrc-change-actions' },
-          h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, 'change', change) }, '编辑'),
+          h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, change) }, '编辑'),
           change.created
             ? h('button', { className: 'skrc-btn-sm', onClick: event => removeChange(event, change) }, '删除')
             : h('button', { className: 'skrc-btn-sm', onClick: event => revertChange(event, change) }, '回滚'),
@@ -741,54 +804,36 @@ window.__ModuleLoader__.load({
             : '')),
         h('div', { className: 'skrc-hist' }, view.historyLine),
         editing && editing.id === view.id ? editor() : h('div', { className: 'skrc-change-actions' },
-          h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, 'view', view) }, '编辑')
+          h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, view) }, '编辑')
         )
       );
 
-      const panel = open && data ? h('div', { className: 'skrc-panel', onClick: event => event.stopPropagation() },
-        h('div', { className: 'skrc-head' },
-          h('b', null, 'kanban'),
-          h('span', { className: 'skrc-meta' }, '只展示，不进模型 · 本次 0 token'),
-          h('button', { className: 'skrc-x', onClick: () => setOpen(false) }, '关闭')
-        ),
-        data.error ? h('div', { className: 'skrc-err' }, data.error) : h('div', null,
-          changes.length > 0 ? h('div', { className: 'skrc-block' },
-            h('div', { className: 'skrc-block-title' }, '本轮看板改动 ' + changes.length),
-            changes.map(changeRow)
-          ) : null,
-          h('div', { className: 'skrc-terms' },
-            '命中关键词：' + ((data.query && data.query.terms && data.query.terms.length)
-              ? data.query.terms.join(' · ')
-              : '（没有命中词）')),
-          views.length === 0 ? h('div', { className: 'skrc-empty' }, '没有相关条目') : h('div', null,
-            views.map(viewRow)
-          ),
-          h('div', { className: 'skrc-stats' },
-            '每次打开记一行到 recall.jsonl · 今天 ' + (stats ? stats.count : 0) + ' 次')
-        )
-      ) : null;
-
-      return h('span', { className: 'skrc-wrap' },
+      return h('div', { style: { pointerEvents: 'none' } },
         h('style', null, RECALL_CSS),
-        h('button', {
-          type: 'button',
-          className: 'skrc-btn' + (state === 'ready' ? ' on' : ''),
-          title: '看板',
-          onClick: toggle
-        }, label),
-        panel
+        h('div', { className: 'skrc-panel', onClick: event => event.stopPropagation() },
+          h('div', { className: 'skrc-head' },
+            h('b', null, '看板'),
+            h('span', { className: 'skrc-meta' }, '只展示 · 不进模型'),
+            h('button', { className: 'skrc-x', onClick: () => overlayPatch({ open: false }) }, '关闭')
+          ),
+          data.error ? h('div', { className: 'skrc-err' }, data.error) : h('div', null,
+            changes.length > 0 ? h('div', null,
+              section('本轮改动', changes.length + ' 条'),
+              changes.map(changeRow)
+            ) : null,
+            section('相关条目', views.length ? views.length + ' 条' : null),
+            h('div', { className: 'skrc-terms' },
+              '命中关键词：' + ((data.query && data.query.terms && data.query.terms.length)
+                ? data.query.terms.join(' · ')
+                : '（没有命中词）')),
+            views.length === 0
+              ? h('div', { className: 'skrc-empty' }, '没有相关条目')
+              : h('div', null, views.map(viewRow)),
+            h('div', { className: 'skrc-stats' },
+              '每次打开记一行到 recall.jsonl · 今天 ' + (stats ? stats.count : 0) + ' 次')
+          )
+        )
       );
-    }
-
-    function RailIcon(props) {
-      const size = props && props.size ? props.size : 18;
-      return h('svg', {
-        width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
-        stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round'
-      },
-      h('rect', { x: 3, y: 4, width: 5, height: 16, rx: 1.2 }),
-      h('rect', { x: 10, y: 4, width: 5, height: 16, rx: 1.2 }),
-      h('rect', { x: 17, y: 4, width: 4, height: 16, rx: 1.2 }));
     }
 
     return {
@@ -807,6 +852,13 @@ window.__ModuleLoader__.load({
           order: 21,
           label: 'kanban'
         }, RecallAction));
+
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'saibo-recall-overlay',
+          order: 40,
+          label: 'kanban'
+        }, RecallOverlay));
       }
     };
   }
