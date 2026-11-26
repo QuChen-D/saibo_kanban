@@ -78,7 +78,7 @@ window.__ModuleLoader__.load({
       .sk-id { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); width:86px; flex:none; }
       .sk-name { flex:0 0 260px; max-width:260px; cursor:text; border-radius:5px; padding:2px 4px; margin:-2px -4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .sk-content { flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; padding:2px 4px; }
-      .sk-body-text { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px dashed var(--dsw-alias-border-l1,#e6e7eb); border-radius:7px; padding:7px 10px; font-size:12.5px; line-height:1.5; cursor:pointer; }
+      .sk-body-text { white-space:pre-wrap; overflow:hidden; text-overflow:ellipsis; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px dashed var(--dsw-alias-border-l1,#e6e7eb); border-radius:7px; padding:7px 10px; font-size:12.5px; line-height:1.5; cursor:pointer; }
       .sk-card-body { margin-top:4px; font-size:12px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.5; }
       .sk-name:hover { background:var(--dsw-alias-bg-layer-2,#f3f4f6); }
       .sk-name input { width:100%; border:1px solid var(--dsw-alias-brand-primary,#2563eb); border-radius:5px; padding:2px 4px; background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; font:inherit; outline:none; }
@@ -435,11 +435,12 @@ window.__ModuleLoader__.load({
                 onClick: () => setBodyEditing(value => !value)
               }, bodyEditing ? '完成' : '编辑正文')),
             bodyEditing
-              ? h('input', {
+              ? h('textarea', {
                 key: detail.item.id + ':' + detail.item.rev + ':body',
+                rows: 3,
                 maxLength: 80,
                 defaultValue: detail.item.body || '',
-                placeholder: '一句话结论，80 字以内',
+                placeholder: '一句话结论，80 字以内（换行会在保存时合并）',
                 onBlur: e => {
                   const value = e.target.value.trim();
                   if (value !== (detail.item.body || '')) update(detail.item.id, detail.item.rev, { body: value });
