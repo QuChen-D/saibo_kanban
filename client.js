@@ -802,10 +802,7 @@ window.__ModuleLoader__.load({
           + (view.matched.length
             ? ' · 命中 ' + view.matched.map(entry => entry.term + (entry.field === 'title' ? '(标题)' : entry.field === 'body' ? '(正文)' : '(原文)')).join(' ')
             : '')),
-        h('div', { className: 'skrc-hist' }, view.historyLine),
-        editing && editing.id === view.id ? editor() : h('div', { className: 'skrc-change-actions' },
-          h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, view) }, '编辑')
-        )
+        h('div', { className: 'skrc-hist' }, view.historyLine)
       );
 
       return h('div', { style: { pointerEvents: 'none' } },
@@ -817,10 +814,10 @@ window.__ModuleLoader__.load({
             h('button', { className: 'skrc-x', onClick: () => overlayPatch({ open: false }) }, '关闭')
           ),
           data.error ? h('div', { className: 'skrc-err' }, data.error) : h('div', null,
-            changes.length > 0 ? h('div', null,
-              section('本轮改动', changes.length + ' 条'),
-              changes.map(changeRow)
-            ) : null,
+            section('本轮改动', changes.length ? changes.length + ' 条' : '无'),
+            changes.length > 0
+              ? changes.map(changeRow)
+              : h('div', { className: 'skrc-empty' }, '本轮 AI 没有改看板。让我记一条、改某条状态或正文，这里就会出现改动，可以编辑、回滚、删除。'),
             section('相关条目', views.length ? views.length + ' 条' : null),
             h('div', { className: 'skrc-terms' },
               '命中关键词：' + ((data.query && data.query.terms && data.query.terms.length)
