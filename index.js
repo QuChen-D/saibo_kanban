@@ -319,6 +319,7 @@ export function collectChanges(store, since) {
       title: item.title,
       kind: item.kind,
       scope: item.scope,
+      body: String(item.body || '').slice(0, 400),
       status: item.status,
       statusLabel: STATUS_LABEL.get(item.status) || item.status,
       rev: item.rev,

@@ -23,12 +23,14 @@ window.__ModuleLoader__.load({
     const kindLabel = id => (KINDS.find(k => k.id === id) || { label: id }).label;
     const statusLabel = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
 
+    /** 正文去掉元数据行，保留换行。列表里截一段直接显示，不用悬浮或点开。 */
     function displayContent(body) {
       if (!body) return '—';
       const meta = /^(编号|类型|优先级|滚动次数|首次来源|最近来源|来源)：/;
-      const lines = String(body).split('\n').map(s => s.trim()).filter(Boolean);
-      const real = lines.filter(l => !meta.test(l));
-      return real[0] || '—';
+      const real = String(body).split('\n').map(s => s.trim()).filter(Boolean).filter(l => !meta.test(l));
+      const text = real.join('\n').trim();
+      if (!text) return '—';
+      return text.length > 400 ? text.slice(0, 400) + '…' : text;
     }
 
     function toBase64(buf) {
@@ -75,7 +77,10 @@ window.__ModuleLoader__.load({
       .sk-row:hover { background:var(--dsw-alias-bg-layer-2,#fbfbfc); }
       .sk-id { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); width:86px; flex:none; }
       .sk-name { flex:0 0 260px; max-width:260px; cursor:text; border-radius:5px; padding:2px 4px; margin:-2px -4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .sk-content { flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; padding:2px 4px; }
+      .sk-content { flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:pre-wrap; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; cursor:pointer; padding:2px 4px; line-height:1.5; }
+      .sk-content.open { display:block; -webkit-line-clamp:unset; }
+      .sk-body-text { white-space:pre-wrap; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px dashed var(--dsw-alias-border-l1,#e6e7eb); border-radius:7px; padding:8px 10px; max-height:260px; overflow:auto; font-size:12.5px; line-height:1.6; cursor:pointer; }
+      .sk-card-body { margin-top:4px; font-size:12px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:pre-wrap; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.5; }
       .sk-name:hover { background:var(--dsw-alias-bg-layer-2,#f3f4f6); }
       .sk-name input { width:100%; border:1px solid var(--dsw-alias-brand-primary,#2563eb); border-radius:5px; padding:2px 4px; background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; font:inherit; outline:none; }
       .sk-sel { border:1px solid transparent; background:transparent; color:inherit; font:inherit; font-size:12px; border-radius:6px; padding:3px 4px; cursor:pointer; max-width:110px; }
@@ -96,11 +101,6 @@ window.__ModuleLoader__.load({
       .sk-col-body { padding:7px; display:flex; flex-direction:column; gap:7px; min-height:70px; }
       .sk-col.over { outline:2px dashed var(--dsw-alias-brand-primary,#2563eb); outline-offset:-3px; }
       .sk-card { background:var(--dsw-alias-bg-layer-1,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:9px; padding:8px 10px; cursor:grab; position:relative; }
-      .sk-tip { display:none; position:absolute; left:0; top:calc(100% + 4px); width:300px; max-width:70vw; background:var(--dsw-alias-bg-overlay,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:8px; box-shadow:0 8px 24px rgba(16,24,40,.18); padding:8px 10px; z-index:20; cursor:default; }
-      .sk-card:hover .sk-tip { display:block; }
-      .sk-tip-title { font-weight:600; font-size:12.5px; }
-      .sk-tip-body { margin-top:4px; font-size:12px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:pre-wrap; max-height:160px; overflow:hidden; }
-      .sk-tip-meta { margin-top:6px; font-size:11px; color:var(--dsw-alias-label-secondary,#6b7280); }
       .sk-card .t { font-weight:550; line-height:1.4; font-size:13px; }
       .sk-card .m { margin-top:5px; display:flex; gap:6px; color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
       .sk-drawer { position:absolute; top:0; right:0; bottom:0; width:min(460px,92%); background:var(--dsw-alias-bg-layer-1,#fff); border-left:1px solid var(--dsw-alias-border-l1,#e6e7eb); box-shadow:-8px 0 24px rgba(16,24,40,.08); display:flex; flex-direction:column; z-index:5; }
@@ -138,7 +138,9 @@ window.__ModuleLoader__.load({
       const [query, setQuery] = useState('');
       const [error, setError] = useState('');
       const [detail, setDetail] = useState(null);
+      const [bodyEditing, setBodyEditing] = useState(false);
       const [editing, setEditing] = useState(null);
+      const [expanded, setExpanded] = useState(null);
       const [draft, setDraft] = useState('');
       const [overCol, setOverCol] = useState(null);
       const [toast, setToast] = useState('');
@@ -206,6 +208,7 @@ window.__ModuleLoader__.load({
       }, [view, visible.length, visibleCount]);
 
       const openDetail = useCallback(async id => {
+        setBodyEditing(false);
         try { setDetail(await api('get', { id })); }
         catch (e) { setError(e.message); }
       }, []);
@@ -325,9 +328,8 @@ window.__ModuleLoader__.load({
                 }
               }) : item.title),
               h('div', {
-                className: 'sk-content',
-                title: item.body || '',
-                onClick: () => openDetail(item.id)
+                className: 'sk-content' + (expanded === item.id ? ' open' : ''),
+                onClick: () => setExpanded(current => (current === item.id ? null : item.id))
               }, item.body ? displayContent(item.body) : '—'),
               h('select', {
                 className: 'sk-sel sk-col-k', value: item.kind,
@@ -384,16 +386,11 @@ window.__ModuleLoader__.load({
                   onDoubleClick: () => openDetail(item.id)
                 },
                 h('div', { className: 't' }, item.title),
+                item.body ? h('div', { className: 'sk-card-body' }, displayContent(item.body)) : null,
                 h('div', { className: 'm' },
                   h('span', null, kindLabel(item.kind)),
                   h('span', null, item.scope || '未定范围'),
                   h('span', { style: { marginLeft: 'auto' } }, 'r' + item.rev)
-                ),
-                h('div', { className: 'sk-tip' },
-                  h('div', { className: 'sk-tip-title' }, item.title),
-                  h('div', { className: 'sk-tip-body' }, item.body || '（无内容）'),
-                  h('div', { className: 'sk-tip-meta' },
-                    statusLabel(item.status) + ' · ' + kindLabel(item.kind) + (item.scope ? ' · ' + item.scope : ''))
                 )))
               ));
             })
@@ -431,14 +428,25 @@ window.__ModuleLoader__.load({
                 if (v && v !== detail.item.title) update(detail.item.id, detail.item.rev, { title: v });
               }
             })),
-          h('div', { className: 'sk-field' }, h('label', null, '内容'),
-            h('textarea', {
-              key: detail.item.id + ':' + detail.item.rev + ':body',
-              defaultValue: detail.item.body || '',
-              onBlur: e => {
-                if (e.target.value !== (detail.item.body || '')) update(detail.item.id, detail.item.rev, { body: e.target.value });
-              }
-            })),
+          h('div', { className: 'sk-field' },
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+              h('label', { style: { flex: 1 } }, '内容'),
+              h('button', {
+                className: 'sk-btn',
+                onClick: () => setBodyEditing(value => !value)
+              }, bodyEditing ? '完成' : '编辑正文')),
+            bodyEditing
+              ? h('textarea', {
+                key: detail.item.id + ':' + detail.item.rev + ':body',
+                defaultValue: detail.item.body || '',
+                onBlur: e => {
+                  if (e.target.value !== (detail.item.body || '')) update(detail.item.id, detail.item.rev, { body: e.target.value });
+                }
+              })
+              : h('div', {
+                className: 'sk-body-text',
+                onClick: () => setBodyEditing(true)
+              }, detail.item.body ? displayContent(detail.item.body) : '（空，点一下写内容）')),
           h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
             h('select', {
               className: 'sk-sel', value: detail.item.status,
@@ -560,6 +568,8 @@ window.__ModuleLoader__.load({
       .skrc-score { margin-left:auto; font-weight:500; color:var(--dsw-alias-label-secondary,#6b7280); }
       .skrc-sub { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; margin-top:2px; }
       .skrc-hist { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; margin-top:1px; }
+      .skrc-body { margin-top:4px; padding:5px 8px; border-radius:6px; background:var(--dsw-alias-bg-layer-2,#f7f8fa); white-space:pre-wrap; font-size:11.5px; line-height:1.55; color:var(--dsw-alias-label-primary,#17181a); display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
+      .skrc-body.open { display:block; -webkit-line-clamp:unset; }
       .skrc-sect { display:flex; align-items:baseline; gap:8px; margin:10px 0 4px; padding-bottom:4px; border-bottom:1px solid var(--dsw-alias-border-l1,#e6e7eb); font-size:11.5px; font-weight:650; color:var(--dsw-alias-label-secondary,#6b7280); }
       .skrc-sect:first-child { margin-top:0; }
       .skrc-sect-x { margin-left:auto; font-weight:500; }
@@ -661,6 +671,7 @@ window.__ModuleLoader__.load({
       const store = useOverlayStore();
       const [editing, setEditing] = useState(null);
       const [saving, setSaving] = useState(false);
+      const [expandedIds, setExpandedIds] = useState(() => new Set());
       const data = store.data;
       const changes = store.changes;
 
@@ -674,6 +685,14 @@ window.__ModuleLoader__.load({
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
       }, [store.open]);
+
+      const toggleBody = useCallback(id => {
+        setExpandedIds(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id); else next.add(id);
+          return next;
+        });
+      }, []);
 
       const dropChange = useCallback(id => {
         overlayPatch({ changes: overlayStore.changes.filter(change => change.id !== id) });
@@ -780,6 +799,10 @@ window.__ModuleLoader__.load({
               ? statusText(change.from.status) + ' → ' + change.statusLabel
               : '内容更新 · ' + change.statusLabel))
           + (change.note ? ' · ' + change.note : '')),
+        change.body ? h('div', {
+          className: 'skrc-body' + (expandedIds.has(change.id) ? ' open' : ''),
+          onClick: () => toggleBody(change.id)
+        }, change.body) : null,
         editing && editing.id === change.id ? editor() : h('div', { className: 'skrc-change-actions' },
           h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, change) }, '编辑'),
           change.created
@@ -802,6 +825,11 @@ window.__ModuleLoader__.load({
           + (view.matched.length
             ? ' · 命中 ' + view.matched.map(entry => entry.term + (entry.field === 'title' ? '(标题)' : entry.field === 'body' ? '(正文)' : '(原文)')).join(' ')
             : '')),
+        view.body ? h('div', {
+          className: 'skrc-body' + (expandedIds.has(view.id) ? ' open' : ''),
+          onClick: () => toggleBody(view.id),
+          title: '点一下展开 / 收起'
+        }, view.body) : null,
         h('div', { className: 'skrc-hist' }, view.historyLine)
       );
 
