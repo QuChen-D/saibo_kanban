@@ -10,7 +10,7 @@ import { Store } from '../store.js';
 import { createTools } from '../tools.js';
 import { normalizeKinds, BoardError } from '../core.js';
 import { collectChanges } from '../index.js';
-import { buildIndex, searchIndex, queryTerms, estimateTokens, buildInjectText, hitView } from '../lib/recall.js';
+import { buildIndex, searchIndex, queryTerms, estimateTokens, buildInjectText, hitView, displayTerms } from '../lib/recall.js';
 import { appendRecall, recallStats } from '../lib/recall-log.js';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'saibo-kanban-'));
@@ -222,6 +222,24 @@ await ok('召回记录单独记账，不写进 records.jsonl', async () => {
   assert.equal(stats.count, 1);
   assert.equal(stats.injectTokens, 42);
   assert.equal(fs.existsSync(path.join(logDir, 'records.jsonl')), false);
+});
+
+await ok('展示关键词：只留稀有词，去掉重叠碎片', async () => {
+  const hits = [{
+    matched: [
+      { term: '合并完', idf: 4.2, field: 'title' },
+      { term: '合并', idf: 3.1, field: 'title' },
+      { term: '发布', idf: 3.5, field: 'title' },
+      { term: '已发布', idf: 1.2, field: 'title' },
+      { term: '本机没', idf: 2.6, field: 'body' }
+    ]
+  }];
+  const terms = displayTerms(hits, 6);
+  assert.ok(terms.includes('合并完'), '应保留较长的稀有词');
+  assert.equal(terms.includes('合并'), false, '被更长词包含的碎片应去掉');
+  assert.ok(terms.includes('发布'));
+  assert.equal(terms.includes('已发布'), false, 'idf 太低的不展示');
+  assert.ok(terms.length <= 6);
 });
 
 await ok('轮内改动：能拿到旧状态和回滚点', async () => {

@@ -571,16 +571,24 @@ window.__ModuleLoader__.load({
       .skrc-change-actions { display:flex; gap:6px; justify-content:flex-end; margin-top:4px; }
       .skrc-btn-sm { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; border-radius:6px; padding:1px 8px; font:inherit; font-size:11.5px; cursor:pointer; }
       .skrc-btn-sm:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); }
+      .skrc-editor { margin-top:6px; display:flex; flex-direction:column; gap:6px; }
+      .skrc-input { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:6px; padding:4px 8px; font:inherit; font-size:12px; background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; outline:none; }
+      .skrc-textarea { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:6px; padding:4px 8px; font:inherit; font-size:12px; background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; resize:vertical; outline:none; }
+      .skrc-editor-row { display:flex; gap:6px; }
     `;
 
-    /** 只读召回预览：检索看板相关条目，展示但不注入模型（0 token）。 */
+    /** kanban 弹窗：本轮相关条目 + 本轮 AI 改过的看板项，可就地编辑/回滚。 */
     function RecallAction(props) {
       const [state, setState] = useState('idle');
       const [data, setData] = useState(null);
       const [changes, setChanges] = useState([]);
       const [open, setOpen] = useState(false);
+      const [editing, setEditing] = useState(null);
+      const [saving, setSaving] = useState(false);
       const sessionId = props && props.sessionId ? props.sessionId : '';
       const messageId = props && props.messageId ? props.messageId : '';
+
+      const statusText = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
 
       const load = useCallback(() => {
         if (state === 'busy') return;
@@ -626,39 +634,121 @@ window.__ModuleLoader__.load({
           .catch(() => {});
       }, [dropChange]);
 
+      const startEdit = useCallback((event, source, item) => {
+        if (event && event.stopPropagation) event.stopPropagation();
+        if (!item || !item.id) return;
+        api('get', { id: item.id })
+          .then(result => {
+            setEditing({
+              source,
+              id: item.id,
+              rev: result.item.rev,
+              title: result.item.title,
+              status: result.item.status,
+              body: result.item.body || ''
+            });
+          })
+          .catch(() => {});
+      }, []);
+
+      const saveEdit = useCallback(() => {
+        if (!editing || saving) return;
+        setSaving(true);
+        api('update', {
+          id: editing.id,
+          expectedRev: editing.rev,
+          patch: { title: editing.title, status: editing.status, body: editing.body }
+        }).then(result => {
+          const item = result.item;
+          setData(current => {
+            if (!current || !Array.isArray(current.views)) return current;
+            return {
+              ...current,
+              views: current.views.map(view => view.id === item.id
+                ? { ...view, title: item.title, status: item.status, statusLabel: statusText(item.status), rev: item.rev }
+                : view)
+            };
+          });
+          setChanges(current => current.map(change => change.id === item.id
+            ? { ...change, title: item.title, status: item.status, statusLabel: statusText(item.status), rev: item.rev, note: '人在弹窗里编辑' }
+            : change));
+          setEditing(null);
+        }).catch(() => {}).finally(() => setSaving(false));
+      }, [editing, saving]);
+
       const views = (data && data.views) || [];
       const hitCount = views.filter(view => view.reason !== '低分' && view.reason !== '泛词').length;
       const label = state === 'busy' ? '…'
         : state === 'ready' ? ('kanban ' + hitCount + '/' + views.length)
           : 'kanban';
       const stats = (data && data.stats) || null;
-      const statusText = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
 
-      const changeRow = (change, index) => {
-        const line = change.created
-          ? '新建 · ' + change.statusLabel
-          : (change.from && change.from.status !== change.status
-            ? statusText(change.from.status) + ' → ' + change.statusLabel
-            : '内容更新 · ' + change.statusLabel);
-        return h('div', { key: change.id || ('c' + index), className: 'skrc-row' },
-          h('div', { className: 'skrc-title' }, change.title),
-          h('div', { className: 'skrc-sub' }, line + (change.note ? ' · ' + change.note : '')),
-          h('div', { className: 'skrc-change-actions' },
-            change.created
-              ? h('button', { className: 'skrc-btn-sm', onClick: event => removeChange(event, change) }, '删除')
-              : h('button', { className: 'skrc-btn-sm', onClick: event => revertChange(event, change) }, '回滚'),
-            h('button', {
-              className: 'skrc-btn-sm',
-              onClick: event => { if (event && event.stopPropagation) event.stopPropagation(); dropChange(change.id); }
-            }, '知道了')
-          )
-        );
-      };
+      const editor = () => h('div', { className: 'skrc-editor' },
+        h('input', {
+          className: 'skrc-input',
+          value: editing.title,
+          onChange: e => setEditing({ ...editing, title: e.target.value })
+        }),
+        h('div', { className: 'skrc-editor-row' },
+          h('select', {
+            className: 'skrc-input',
+            value: editing.status,
+            onChange: e => setEditing({ ...editing, status: e.target.value })
+          }, STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label)))
+        ),
+        h('textarea', {
+          className: 'skrc-textarea',
+          rows: 3,
+          value: editing.body,
+          onChange: e => setEditing({ ...editing, body: e.target.value })
+        }),
+        h('div', { className: 'skrc-change-actions' },
+          h('button', { className: 'skrc-btn-sm', disabled: saving, onClick: saveEdit }, saving ? '保存中…' : '保存'),
+          h('button', { className: 'skrc-btn-sm', onClick: () => setEditing(null) }, '取消')
+        )
+      );
+
+      const changeRow = (change, index) => h('div', { key: change.id || ('c' + index), className: 'skrc-row' },
+        h('div', { className: 'skrc-title' }, change.title),
+        h('div', { className: 'skrc-sub' },
+          (change.created
+            ? '新建 · ' + change.statusLabel
+            : (change.from && change.from.status !== change.status
+              ? statusText(change.from.status) + ' → ' + change.statusLabel
+              : '内容更新 · ' + change.statusLabel))
+          + (change.note ? ' · ' + change.note : '')),
+        editing && editing.id === change.id ? editor() : h('div', { className: 'skrc-change-actions' },
+          h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, 'change', change) }, '编辑'),
+          change.created
+            ? h('button', { className: 'skrc-btn-sm', onClick: event => removeChange(event, change) }, '删除')
+            : h('button', { className: 'skrc-btn-sm', onClick: event => revertChange(event, change) }, '回滚'),
+          h('button', {
+            className: 'skrc-btn-sm',
+            onClick: event => { if (event && event.stopPropagation) event.stopPropagation(); dropChange(change.id); }
+          }, '确认')
+        )
+      );
+
+      const viewRow = (view, index) => h('div', { key: view.id, className: 'skrc-row' },
+        h('div', { className: 'skrc-title' },
+          h('span', null, (index + 1) + '. ' + view.title),
+          h('span', { className: 'skrc-score' }, view.score.toFixed(2))
+        ),
+        h('div', { className: 'skrc-sub' },
+          view.statusLabel + ' · ' + (view.scope || '未定范围') + ' · ' + view.reason
+          + (view.matched.length
+            ? ' · 命中 ' + view.matched.map(entry => entry.term + (entry.field === 'title' ? '(标题)' : entry.field === 'body' ? '(正文)' : '(原文)')).join(' ')
+            : '')),
+        h('div', { className: 'skrc-hist' }, view.historyLine),
+        editing && editing.id === view.id ? editor() : h('div', { className: 'skrc-change-actions' },
+          h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, 'view', view) }, '编辑')
+        )
+      );
 
       const panel = open && data ? h('div', { className: 'skrc-panel', onClick: event => event.stopPropagation() },
         h('div', { className: 'skrc-head' },
           h('b', null, 'kanban'),
-          h('span', { className: 'skrc-meta' }, '只展示 · 本次 0 token'),
+          h('span', { className: 'skrc-meta' }, '只展示，不进模型 · 本次 0 token'),
           h('button', { className: 'skrc-x', onClick: () => setOpen(false) }, '关闭')
         ),
         data.error ? h('div', { className: 'skrc-err' }, data.error) : h('div', null,
@@ -667,33 +757,14 @@ window.__ModuleLoader__.load({
             changes.map(changeRow)
           ) : null,
           h('div', { className: 'skrc-terms' },
-            '本轮理解：' + ((data.query && data.query.terms && data.query.terms.length)
+            '命中关键词：' + ((data.query && data.query.terms && data.query.terms.length)
               ? data.query.terms.join(' · ')
-              : '（没有可用关键词）')),
+              : '（没有命中词）')),
           views.length === 0 ? h('div', { className: 'skrc-empty' }, '没有相关条目') : h('div', null,
-            views.map((view, index) => h('div', { key: view.id, className: 'skrc-row' },
-              h('div', { className: 'skrc-title' },
-                h('span', null, (index + 1) + '. ' + view.title),
-                h('span', { className: 'skrc-score' }, view.score.toFixed(2))
-              ),
-              h('div', { className: 'skrc-sub' },
-                view.statusLabel + ' · ' + (view.scope || '未定范围') + ' · ' + view.reason
-                + (view.matched.length
-                  ? ' · 命中 ' + view.matched.map(entry => entry.term + (entry.field === 'title' ? '(标题)' : entry.field === 'body' ? '(正文)' : '(原文)')).join(' ')
-                  : '')),
-              h('div', { className: 'skrc-hist' }, view.historyLine)
-            ))
-          ),
-          h('div', { className: 'skrc-inject' },
-            h('div', null, '若注入：约 ' + data.injectTokens + ' token'),
-            data.injectText
-              ? h('pre', { className: 'skrc-pre' }, data.injectText)
-              : h('div', { className: 'skrc-empty' }, '本轮没有过阈值的条目，不会注入')
+            views.map(viewRow)
           ),
           h('div', { className: 'skrc-stats' },
-            '已记录到 recall.jsonl：今天 ' + (stats ? stats.count : 0) + ' 次'
-            + ' · 预计注入 ' + (stats ? stats.injectTokens : 0) + ' token'
-            + ' · 实际注入 ' + (stats ? stats.actualTokens : 0) + ' token')
+            '每次打开记一行到 recall.jsonl · 今天 ' + (stats ? stats.count : 0) + ' 次')
         )
       ) : null;
 

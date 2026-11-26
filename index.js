@@ -11,7 +11,7 @@ import { normalizeKinds, BoardError, STATUSES } from './core.js';
 import { readXlsxBuffer } from './lib/xlsx.js';
 import { buildImport, describeImport } from './lib/import-map.js';
 import {
-  buildIndex, searchIndex, hitView, buildInjectText, estimateTokens, queryTerms
+  buildIndex, searchIndex, hitView, buildInjectText, estimateTokens, displayTerms
 } from './lib/recall.js';
 import { appendRecall, recallStats } from './lib/recall-log.js';
 
@@ -232,7 +232,7 @@ function recallTurn(ctx, store, args, settings) {
   const views = ranked.map(hit => hitView(hit, store));
   const injectText = buildInjectText(views, { limit: injectLimit });
   const injectTokens = estimateTokens(injectText);
-  const terms = [...queryTerms(parts.map(part => part.text).join('\n')).keys()].slice(0, 12);
+  const terms = displayTerms(ranked, 6);
   const hitRows = views.filter(view => view.reason !== '低分' && view.reason !== '泛词').length;
   const recallId = `rc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
