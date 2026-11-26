@@ -7,7 +7,7 @@
  */
 import { Store, defaultDataDir } from './store.js';
 import { createTools } from './tools.js';
-import { normalizeKinds, BoardError, STATUSES } from './core.js';
+import { normalizeKinds, BoardError, STATUSES, condenseBody } from './core.js';
 import { readXlsxBuffer } from './lib/xlsx.js';
 import { buildImport, describeImport } from './lib/import-map.js';
 import {
@@ -33,6 +33,7 @@ function recallIndexFor(store) {
 
 const BOARD_WORK_HINT = [
   '看板协作：当用户这句话涉及看板里的任务（做完了、改主意、问进度）时，先用 board_search 定位一下条目（一次就够），再决定是否 board_update；不要每轮遍历看板。',
+  '看板正文就是摘要：一句话结论，单行，80 字以内；依据、过程、长清单不要写进正文（写 note 或留在会话里）。超长会直接被拒。',
   '改动只在确有依据时做，note 写清依据；看板改动会由页面在 kanban 弹窗里列给用户回看和回滚，不要往消息里贴改动清单。'
 ].join('\n');
 
@@ -385,7 +386,7 @@ function applyPlan(store, plan, includeNotes = false) {
   const write = (item, note) => {
     if (existing.has(`${item.scope}|${item.title}`)) { skipped += 1; return; }
     store.record({
-      title: item.title, kind: item.kind, scope: item.scope, body: item.body, status: item.status
+      title: item.title, kind: item.kind, scope: item.scope, body: condenseBody(item.body), status: item.status
     }, { by: 'human', note });
     existing.add(`${item.scope}|${item.title}`);
     imported += 1;

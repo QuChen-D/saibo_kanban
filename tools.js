@@ -74,14 +74,14 @@ export function createTools(store, options = {}) {
     },
     {
       name: 'board_record',
-      description: '把一条新条目写进看板。先用一句话说清楚，再补正文。',
+      description: '把一条新条目写进看板。标题说清是什么，正文只写一句结论。',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string', description: '一句话标题，必填，最长 200 字' },
           kind: { type: 'string', enum: kindIds, description: '条目类型，默认 task' },
           scope: { type: 'string', description: '所属范围，例如“看板插件”“存储”；不确定就省略' },
-          body: { type: 'string', description: '补充说明，Markdown；可以省略' },
+          body: { type: 'string', description: '一句话结论，单行、80 字以内；不要写编号/类型/依据等元数据，超长会被拒' },
           status: { type: 'string', enum: statusIds.filter(s => s !== 'done'), description: '初始状态，默认 backlog' },
           source: {
             type: 'object',
@@ -118,7 +118,7 @@ export function createTools(store, options = {}) {
           kind: { type: 'string', enum: kindIds },
           status: { type: 'string', enum: statusIds },
           scope: { type: 'string' },
-          body: { type: 'string' },
+          body: { type: 'string', description: '一句话结论，单行、80 字以内' },
           note: { type: 'string', description: '这次改动的理由，会写进修订历史' }
         },
         required: ['id', 'expectedRev'],
@@ -162,7 +162,7 @@ export function createTools(store, options = {}) {
           title: { type: 'string', description: '新条目的标题' },
           kind: { type: 'string', enum: kindIds },
           scope: { type: 'string' },
-          body: { type: 'string' },
+          body: { type: 'string', description: '一句话结论，单行、80 字以内' },
           status: { type: 'string', enum: statusIds.filter(s => s !== 'done'), description: '新条目状态，默认 in_review' },
           note: { type: 'string' }
         },
@@ -198,7 +198,7 @@ export function createTools(store, options = {}) {
           title: { type: 'string', description: '合并后条目的标题' },
           kind: { type: 'string', enum: kindIds },
           scope: { type: 'string' },
-          body: { type: 'string', description: '合并后的正文；省略则拼接各来源正文' },
+          body: { type: 'string', description: '合并后的一句话结论；省略则取来源里第一条能用的句子' },
           status: { type: 'string', enum: statusIds.filter(s => s !== 'done'), description: '默认 in_review' },
           note: { type: 'string' }
         },

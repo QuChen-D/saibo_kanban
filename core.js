@@ -81,6 +81,43 @@ export function assertTitle(title) {
   return title.trim();
 }
 
+/** 正文上限：正文就是摘要，一句话写在 80 字以内。 */
+export const BODY_MAX = 80;
+
+/**
+ * 正文校验：折叠换行与多余空白，超出上限直接拒绝（不静默截断）。
+ * 细节（依据、过程、长清单）不进正文，写文档或留在会话里。
+ */
+export function assertBody(value) {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') {
+    throw new BoardError('INVALID_BODY', '正文必须是字符串');
+  }
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length > BODY_MAX) {
+    throw new BoardError('BODY_TOO_LONG',
+      `正文最长 ${BODY_MAX} 字（现在 ${text.length} 字）。正文只写一句结论，依据/过程放文档或会话。`);
+  }
+  return text;
+}
+
+/**
+ * 把任意文本压成一句：去掉元数据行和列表标记，取第一句，超长截到上限。
+ * 导入、合并这类“拿到原文但没有作者意图”的场景用它兜底。
+ */
+export function condenseBody(value) {
+  const lines = String(value || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line => !/^(编号|类型|优先级|滚动次数|首次来源|最近来源|来源|依据|参考|状态|标签|范围|序号)[：:]/.test(line))
+    .map(line => line.replace(/^[-*•]\s*/, '').replace(/^\d+[.)]\s*/, '').trim())
+    .filter(Boolean);
+  const first = lines[0] || '';
+  if (first.length <= BODY_MAX) return first;
+  return first.slice(0, BODY_MAX - 1) + '…';
+}
+
 /**
  * 校验状态值。任意状态之间可以互转（回滚兜底），只拒绝未知状态。
  */

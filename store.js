@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {
-  BoardError, assertTitle, assertKind, assertStatus, assertTransition,
+  BoardError, assertTitle, assertKind, assertStatus, assertTransition, assertBody, condenseBody,
   diffFields, nextId, isDraft, buildBrief, matchesQuery
 } from './core.js';
 
@@ -111,7 +111,7 @@ export class Store {
     item.kind = kind;
     item.status = status;
     item.scope = typeof input.scope === 'string' ? input.scope : '';
-    item.body = typeof input.body === 'string' ? input.body : '';
+    item.body = assertBody(input.body);
     item.source = normalizeSource(input.source);
     item.rev = 1;
     item.createdAt = now;
@@ -150,9 +150,7 @@ export class Store {
     if ('scope' in safe && typeof safe.scope !== 'string') {
       throw new BoardError('INVALID_SCOPE', 'scope 必须是字符串');
     }
-    if ('body' in safe && typeof safe.body !== 'string') {
-      throw new BoardError('INVALID_BODY', 'body 必须是字符串');
-    }
+    if ('body' in safe) safe.body = assertBody(safe.body);
     const changes = diffFields(current, safe);
     if (Object.keys(changes).length === 0) {
       return { item: current, changed: false, changes: {} };
@@ -231,7 +229,7 @@ export class Store {
       kind: merged.kind || sources[0].kind,
       status: merged.status || 'in_review',
       scope: merged.scope ?? sources[0].scope,
-      body: merged.body ?? sources.map(s => s.body).filter(Boolean).join('\n\n'),
+      body: merged.body ?? condenseBody(sources.map(s => s.body).filter(Boolean).join('\n')),
       source: merged.source || sources[0].source
     }, { by, note: context.note || `合并 ${sources.map(s => s.id).join(' + ')}` });
     const now = new Date().toISOString();

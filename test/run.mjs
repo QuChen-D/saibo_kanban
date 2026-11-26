@@ -255,6 +255,19 @@ await ok('轮内改动：能拿到旧状态和回滚点', async () => {
   assert.equal(hit.note, '这轮做完了');
 });
 
+await ok('正文折叠换行，超 80 字直接拒绝', async () => {
+  const it = await call('board_record', { title: '正文契约测试', body: '一句话结论\n第二行' });
+  assert.equal(store.get(it.id).body, '一句话结论 第二行', '换行应折叠成空格');
+  await assert.rejects(
+    () => call('board_record', { title: '超长正文测试', body: '长'.repeat(81) }),
+    err => err.code === 'BODY_TOO_LONG'
+  );
+  await assert.rejects(
+    () => call('board_update', { id: it.id, expectedRev: it.rev, body: '长'.repeat(81) }),
+    err => err.code === 'BODY_TOO_LONG'
+  );
+});
+
 console.log(`\n全部通过：${passed} 项`);
 console.log('样例档案：');
 console.log(fs.readFileSync(path.join(dir, 'records.jsonl'), 'utf8').split('\n').slice(0, 2).join('\n'));
