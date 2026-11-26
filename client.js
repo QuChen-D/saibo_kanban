@@ -23,14 +23,11 @@ window.__ModuleLoader__.load({
     const kindLabel = id => (KINDS.find(k => k.id === id) || { label: id }).label;
     const statusLabel = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
 
-    /** 正文去掉元数据行，保留换行。列表里截一段直接显示，不用悬浮或点开。 */
+    /** 列表只显示正文第一行（结论）；全文靠悬浮/详情。 */
     function displayContent(body) {
       if (!body) return '—';
-      const meta = /^(编号|类型|优先级|滚动次数|首次来源|最近来源|来源)：/;
-      const real = String(body).split('\n').map(s => s.trim()).filter(Boolean).filter(l => !meta.test(l));
-      const text = real.join('\n').trim();
-      if (!text) return '—';
-      return text.length > 400 ? text.slice(0, 400) + '…' : text;
+      const lines = String(body).split('\n').map(s => s.trim()).filter(Boolean);
+      return lines[0] || '—';
     }
 
     function toBase64(buf) {
@@ -78,7 +75,7 @@ window.__ModuleLoader__.load({
       .sk-id { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); width:86px; flex:none; }
       .sk-name { flex:0 0 260px; max-width:260px; cursor:text; border-radius:5px; padding:2px 4px; margin:-2px -4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .sk-content { flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; padding:2px 4px; }
-      .sk-body-text { white-space:pre-wrap; overflow:hidden; text-overflow:ellipsis; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px dashed var(--dsw-alias-border-l1,#e6e7eb); border-radius:7px; padding:7px 10px; font-size:12.5px; line-height:1.5; cursor:pointer; }
+      .sk-body-text { white-space:pre-wrap; max-height:240px; overflow:auto; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px dashed var(--dsw-alias-border-l1,#e6e7eb); border-radius:7px; padding:7px 10px; font-size:12.5px; line-height:1.55; cursor:pointer; }
       .sk-card-body { margin-top:4px; font-size:12px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.5; }
       .sk-name:hover { background:var(--dsw-alias-bg-layer-2,#f3f4f6); }
       .sk-name input { width:100%; border:1px solid var(--dsw-alias-brand-primary,#2563eb); border-radius:5px; padding:2px 4px; background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; font:inherit; outline:none; }
@@ -385,7 +382,7 @@ window.__ModuleLoader__.load({
                   onDoubleClick: () => openDetail(item.id)
                 },
                 h('div', { className: 't' }, item.title),
-                item.body ? h('div', { className: 'sk-card-body' }, displayContent(item.body)) : null,
+                item.body ? h('div', { className: 'sk-card-body', title: item.body }, displayContent(item.body)) : null,
                 h('div', { className: 'm' },
                   h('span', null, kindLabel(item.kind)),
                   h('span', null, item.scope || '未定范围'),
@@ -437,10 +434,9 @@ window.__ModuleLoader__.load({
             bodyEditing
               ? h('textarea', {
                 key: detail.item.id + ':' + detail.item.rev + ':body',
-                rows: 3,
-                maxLength: 80,
+                rows: 4,
                 defaultValue: detail.item.body || '',
-                placeholder: '一句话结论，80 字以内（换行会在保存时合并）',
+                placeholder: '第一行结论；需要时再补「为什么」「以后」',
                 onBlur: e => {
                   const value = e.target.value.trim();
                   if (value !== (detail.item.body || '')) update(detail.item.id, detail.item.rev, { body: value });
@@ -448,9 +444,8 @@ window.__ModuleLoader__.load({
               })
               : h('div', {
                 className: 'sk-body-text',
-                title: detail.item.body || '',
                 onClick: () => setBodyEditing(true)
-              }, detail.item.body ? displayContent(detail.item.body) : '（空，点一下写一句）')),
+              }, detail.item.body || '（空，点一下写点东西）')),
           h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
             h('select', {
               className: 'sk-sel', value: detail.item.status,
@@ -793,7 +788,7 @@ window.__ModuleLoader__.load({
               ? statusText(change.from.status) + ' → ' + change.statusLabel
               : '内容更新 · ' + change.statusLabel))
           + (change.note ? ' · ' + change.note : '')),
-        change.body ? h('div', { className: 'skrc-body', title: change.body }, change.body) : null,
+        change.body ? h('div', { className: 'skrc-body', title: change.body }, displayContent(change.body)) : null,
         editing && editing.id === change.id ? editor() : h('div', { className: 'skrc-change-actions' },
           h('button', { className: 'skrc-btn-sm', onClick: event => startEdit(event, change) }, '编辑'),
           change.created
@@ -816,7 +811,7 @@ window.__ModuleLoader__.load({
           + (view.matched.length
             ? ' · 命中 ' + view.matched.map(entry => entry.term + (entry.field === 'title' ? '(标题)' : entry.field === 'body' ? '(正文)' : '(原文)')).join(' ')
             : '')),
-        view.body ? h('div', { className: 'skrc-body', title: view.body }, view.body) : null,
+        view.body ? h('div', { className: 'skrc-body', title: view.body }, displayContent(view.body)) : null,
         h('div', { className: 'skrc-hist' }, view.historyLine)
       );
 

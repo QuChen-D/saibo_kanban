@@ -1,6 +1,6 @@
 {
   "name": "saibo-kanban",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "AI 与人共用的活看板：草稿进收件箱、人做分拣、字段级修订可回滚，零 token 纠错。",
   "keywords": [
     "dsh",

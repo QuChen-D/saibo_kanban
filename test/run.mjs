@@ -255,15 +255,11 @@ await ok('轮内改动：能拿到旧状态和回滚点', async () => {
   assert.equal(hit.note, '这轮做完了');
 });
 
-await ok('正文折叠换行，超 80 字直接拒绝', async () => {
-  const it = await call('board_record', { title: '正文契约测试', body: '一句话结论\n第二行' });
-  assert.equal(store.get(it.id).body, '一句话结论 第二行', '换行应折叠成空格');
+await ok('正文保留换行与结构，只做清理；只有病态超长才拒绝', async () => {
+  const it = await call('board_record', { title: '正文契约测试', body: '结论一行\n\n为什么：因为这样\n以后：下次注意' });
+  assert.equal(store.get(it.id).body, '结论一行\n\n为什么：因为这样\n以后：下次注意');
   await assert.rejects(
-    () => call('board_record', { title: '超长正文测试', body: '长'.repeat(81) }),
-    err => err.code === 'BODY_TOO_LONG'
-  );
-  await assert.rejects(
-    () => call('board_update', { id: it.id, expectedRev: it.rev, body: '长'.repeat(81) }),
+    () => call('board_record', { title: '超长正文测试', body: '长'.repeat(2001) }),
     err => err.code === 'BODY_TOO_LONG'
   );
 });
