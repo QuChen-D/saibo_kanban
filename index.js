@@ -1,20 +1,19 @@
 /**
  * saibo-kanban — AI 与人共用的活看板。
  *
- * 八个工具 + 一个页面（收件箱 / 看板 / 表格）+ 对话动作（加入看板 / 相关看板 / 本轮改动）。
+ * 八个工具 + 一个页面（收件箱 / 看板 / 表格）+ 对话里的「kanban」弹窗。
  * 数据落在 $DSH_HOME/saibo_kanban/records.jsonl；页面通过 /saibo-kanban/api 读写。
- * 每轮把相关条目附在用户消息末尾（只进请求，不落历史），轮末记下改动供人回滚。
+ * 弹窗里展示本轮相关条目和 AI 本轮的看板改动（改动可回滚），不往用户消息里写任何东西。
  */
 import { Store, defaultDataDir } from './store.js';
 import { createTools } from './tools.js';
-import { normalizeKinds, buildCapture, BoardError, STATUSES } from './core.js';
+import { normalizeKinds, BoardError, STATUSES } from './core.js';
 import { readXlsxBuffer } from './lib/xlsx.js';
 import { buildImport, describeImport } from './lib/import-map.js';
 import {
   buildIndex, searchIndex, hitView, buildInjectText, estimateTokens, queryTerms
 } from './lib/recall.js';
 import { appendRecall, recallStats } from './lib/recall-log.js';
-import { appendCaptured, loadCaptured } from './lib/capture-archive.js';
 
 export const inject = ['tools', 'webServer'];
 
@@ -25,29 +24,16 @@ const recallCache = new WeakMap();
 
 function recallIndexFor(store) {
   const cached = recallCache.get(store);
-  const rev = `${store.events}:${store.capturedRev || 0}`;
+  const rev = String(store.events);
   if (cached && cached.rev === rev) return cached.index;
-  const index = buildIndex(store.items, store.captured || new Map());
+  const index = buildIndex(store.items);
   recallCache.set(store, { rev, index });
   return index;
 }
 
-const CAPTURE_HINT = [
-  '看板（saibo-kanban）是这台机器上所有会话共用的活看板：人可以点开页面改、回滚。',
-  '当这轮对话确实产出了值得留下的结果（做完的事、定下的决策、踩到的坑、成型的设计），在回复末尾加一个 board 代码块，一行一条，最多 3 条：',
-  '',
-  '```board',
-  '已完成｜任务｜G5 前端｜修好打印图标｜补了回归测试，弹窗不再串数据',
-  '```',
-  '',
-  '字段顺序固定：状态｜类型｜范围｜标题｜说明。状态用 待规划/待办/进行中/待验收/已完成/受阻；类型用 任务/决策/踩坑/设计；范围沿用看板里已有的分组名，不确定就留空；说明写一句话结果或依据（60 字内），它会成为看板里的正文。',
-  '没有值得落板的结果就不要写这个块；也不要主动调用 board_record，除非用户明确要求直接写入。'
-].join('\n');
-
 const BOARD_WORK_HINT = [
-  '看板协作：这轮对话和看板条目相关时，用户消息末尾会附一段「看板·本轮到相关」（系统自动附加，不是用户说的话）。',
-  '如果这轮工作让其中某条的状态、内容或补充说明发生了变化，直接用 board_update 改（带上列表里的 id 和 r 号），note 写清依据；改完在回复末尾用一行列出改动。',
-  '没有变化就不要动；不要自己遍历看板，也不要为了确认去全量读取。'
+  '看板协作：当用户这句话涉及看板里的任务（做完了、改主意、问进度）时，先用 board_search 定位一下条目（一次就够），再决定是否 board_update；不要每轮遍历看板。',
+  '改动只在确有依据时做，note 写清依据；看板改动会由页面在 kanban 弹窗里列给用户回看和回滚，不要往消息里贴改动清单。'
 ].join('\n');
 
 export function apply(ctx, config) {
@@ -57,8 +43,6 @@ export function apply(ctx, config) {
     : defaultDataDir();
   const kinds = normalizeKinds(settings.kinds);
   const store = new Store({ dataDir, kinds }).load();
-  store.captured = loadCaptured(dataDir);
-  store.capturedRev = 0;
   const turnState = new Map();
   const tools = createTools(store, {
     kinds,
@@ -69,14 +53,9 @@ export function apply(ctx, config) {
     ctx.effect(() => ctx.tools.register(tool), `saibo-kanban: ${tool.name}`);
   }
 
-  if (settings.captureHint !== false) {
+  {
     const prompt = ctx.get('systemPrompt');
     if (prompt) {
-      ctx.effect(() => prompt.section({
-        name: 'saibo-kanban:capture',
-        order: 640,
-        text: CAPTURE_HINT
-      }), 'saibo-kanban: 看板写入约定');
       ctx.effect(() => prompt.section({
         name: 'saibo-kanban:work',
         order: 641,
@@ -89,39 +68,6 @@ export function apply(ctx, config) {
   ctx.effect(() => ctx.on('session/event', (session, event) => {
     try { trackTurn(store, turnState, session, event); } catch { /* 不影响对话 */ }
   }), 'saibo-kanban: 轮次跟踪');
-
-  if (settings.recallInject !== false) {
-    const injectedMessages = new Map();
-    // 用户消息进入这一步前，把相关条目附在消息末尾（只在请求里，不写会话历史）。
-    ctx.effect(() => ctx.on('agent/pre-step', async (payload, next) => {
-      const decision = await next();
-      try {
-        if (!decision || decision.kind !== 'enter') return decision;
-        const incoming = payload && Array.isArray(payload.messages)
-          ? payload.messages[payload.messages.length - 1]
-          : null;
-        if (!incoming || incoming.role !== 'user') return decision;
-        const sessionId = payload.agent ? payload.agent.id : '';
-        if (sessionId && injectedMessages.get(sessionId) === incoming.id) return decision;
-        const sessions = ctx.get('sessions');
-        const session = sessions && sessionId ? sessions.get(sessionId) : undefined;
-        const header = session && session.header;
-        if (header && (header.origin === 'subagent' || (header.delegationDepth || 0) > 0)) return decision;
-        const block = buildTurnBlock(store, payload, settings);
-        if (!block) return decision;
-        const messages = Array.isArray(decision.messages) ? decision.messages : [];
-        const last = messages[messages.length - 1];
-        if (!last || last.role !== 'user') return decision;
-        const content = Array.isArray(last.content) ? last.content.slice() : [];
-        content.push({ type: 'text', text: block });
-        const clone = { ...last, content };
-        if (sessionId) injectedMessages.set(sessionId, incoming.id);
-        return { ...decision, messages: [...messages.slice(0, -1), clone] };
-      } catch {
-        return decision;
-      }
-    }), 'saibo-kanban: 相关条目注入');
-  }
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
@@ -196,9 +142,6 @@ function dispatch(ctx, store, settings, turnState, method, args) {
       const plan = buildImport(readXlsxBuffer(decodeData(args.data)));
       return applyPlan(store, plan, args.includeNotes === true);
     }
-    case 'capture': {
-      return capture(ctx, store, args);
-    }
     case 'recall': {
       return recallTurn(ctx, store, args, settings);
     }
@@ -219,80 +162,6 @@ function dispatch(ctx, store, settings, turnState, method, args) {
   }
 }
 
-/**
- * 对话 → 看板：读这条消息，按其中 board 代码块（或首行）写入。
- * args: { sessionId, messageId?, scope?, text?, dryRun? }
- * messageId 省略时取该会话最后一条助手消息（便于脚本和自测）。
- */
-function capture(ctx, store, args) {
-  const source = resolveMessage(ctx, args);
-  const plan = buildCapture(source.text, { scope: args.scope });
-  if (args.dryRun === true) {
-    return {
-      dryRun: true,
-      message: source.message,
-      body: plan.body,
-      items: plan.items,
-      warnings: plan.warnings,
-      hasMarkers: plan.hasMarkers
-    };
-  }
-  const applied = applyCapture(store, plan, source.ref, {
-    sourceLabel: source.ref ? `对话 · ${new Date().toISOString().slice(0, 10)}` : '',
-    archive: (id, text) => {
-      if (!text) return;
-      try {
-        appendCaptured(store.dataDir, id, text, {
-          sessionId: typeof args.sessionId === 'string' ? args.sessionId : '',
-          messageId: source.message ? source.message.id : ''
-        });
-      } catch { /* 原文索引失败不影响落板 */ }
-      store.captured.set(id, text);
-      store.capturedRev = (store.capturedRev || 0) + 1;
-    }
-  });
-  return { ...applied, warnings: plan.warnings, hasMarkers: plan.hasMarkers };
-}
-
-/** 把解析结果落库：新建；同范围同标题则更新状态；状态相同才算已存在。 */
-export function applyCapture(store, plan, source, options = {}) {
-  const created = [];
-  const updated = [];
-  const existing = [];
-  const sourceLabel = typeof options.sourceLabel === 'string' ? options.sourceLabel : '';
-  const bodyFor = item => {
-    const summary = String(item.summary || plan.body || '').trim();
-    return sourceLabel ? `${summary}\n\n来源：${sourceLabel}` : summary;
-  };
-  for (const item of plan.items) {
-    const dup = findSameItem(store, item);
-    if (dup) {
-      if (dup.status !== item.status) {
-        const result = store.update(dup.id, { status: item.status }, {
-          by: 'human',
-          expectedRev: dup.rev,
-          note: '从对话更新状态'
-        });
-        updated.push(publicItem(result.item));
-      } else {
-        existing.push(publicItem(dup));
-      }
-      continue;
-    }
-    const saved = store.record({
-      title: item.title,
-      kind: item.kind,
-      status: item.status,
-      scope: item.scope,
-      body: bodyFor(item),
-      source
-    }, { by: 'human', note: '从对话加入看板' });
-    if (typeof options.archive === 'function' && plan.sourceText) options.archive(saved.id, plan.sourceText);
-    created.push(publicItem(saved));
-  }
-  return { created, updated, existing };
-}
-
 /** 活会话的消息列表。 */
 function sessionMessages(ctx, sessionId) {
   if (!sessionId) throw new BoardError('NO_SESSION', '缺少会话 id，读不到消息');
@@ -305,26 +174,6 @@ function sessionMessages(ctx, sessionId) {
   } catch (error) {
     throw new BoardError('NO_MESSAGES', '读取会话消息失败');
   }
-}
-
-/** 从活会话里取出一条消息的纯文本。 */
-function resolveMessage(ctx, args) {
-  if (typeof args.text === 'string' && args.text.trim()) {
-    return { text: args.text, ref: null, message: null };
-  }
-  const sessionId = typeof args.sessionId === 'string' ? args.sessionId : '';
-  const messages = sessionMessages(ctx, sessionId);
-  const index = typeof args.messageId === 'string' && args.messageId
-    ? messages.findIndex(m => m && m.id === args.messageId)
-    : messages.length - 1;
-  if (index < 0) throw new BoardError('NO_MESSAGE', '找不到这条消息');
-  const picked = pickTextMessage(messages, index);
-  if (!picked) throw new BoardError('EMPTY_MESSAGE', '这条消息没有可加入看板的内容');
-  return {
-    text: picked.text,
-    ref: { type: 'session', ref: `${sessionId}#${picked.message.id}` },
-    message: { id: picked.message.id, role: picked.message.role }
-  };
 }
 
 /** 取这一轮的用户消息 + 助手消息，供召回当查询。 */
@@ -413,51 +262,6 @@ function recallTurn(ctx, store, args, settings) {
     displayTokens: 0,
     stats: recallStats(store.dataDir, 1)
   };
-}
-
-/**
- * 把相关条目附到这一轮用户消息末尾（只进请求，不写会话历史）。
- * 返回要附加的文本；没有相关条目就返回空串。
- */
-export function buildTurnBlock(store, payload, settings) {
-  const messages = payload && Array.isArray(payload.messages) ? payload.messages : [];
-  const last = messages[messages.length - 1];
-  if (!last) return '';
-  const text = messageText(last);
-  if (!text || text.length < 4) return '';
-  const limit = Number.isFinite(settings.recallInjectLimit) ? settings.recallInjectLimit : 4;
-  const threshold = Number.isFinite(settings.recallThreshold) ? settings.recallThreshold : 3;
-  let hits;
-  try {
-    hits = searchIndex(recallIndexFor(store), store.items, [{ text, weight: 1 }], { limit, threshold });
-  } catch {
-    return '';
-  }
-  if (!hits || hits.length === 0) return '';
-  const lines = ['【看板·本轮到相关】（系统自动附加，不是用户的话）'];
-  for (const hit of hits) {
-    const item = hit.item;
-    lines.push(`- ${item.title}｜${STATUS_LABEL.get(item.status) || item.status}｜r${item.rev}｜${item.scope || '未定'}`);
-  }
-  const block = lines.join('\n');
-  try {
-    const injectTokens = estimateTokens(block);
-    appendRecall(store.dataDir, {
-      v: 1,
-      recallId: `rc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-      time: new Date().toISOString(),
-      sessionId: payload.agent ? payload.agent.id : '',
-      messageId: last.id || '',
-      terms: [],
-      hitRows: hits.length,
-      candidateRows: hits.length,
-      injectText: block,
-      injectTokens,
-      injected: true,
-      actualTokens: injectTokens
-    });
-  } catch { /* 记账失败不影响对话 */ }
-  return block;
 }
 
 /** 记录每轮起点、最后一条助手消息，轮末算改动。 */
@@ -550,16 +354,6 @@ function messageText(message) {
     if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text);
   }
   return texts.join('\n\n').trim();
-}
-
-/** 同范围同标题的活跃条目视为已存在，不重复写。 */
-function findSameItem(store, item) {
-  const scope = item.scope || '';
-  for (const current of store.items.values()) {
-    if (current.archived || current.mergedInto || current.supersededBy) continue;
-    if ((current.scope || '') === scope && current.title === item.title) return current;
-  }
-  return null;
 }
 
 function publicItem(item) {

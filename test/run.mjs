@@ -8,8 +8,8 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { Store } from '../store.js';
 import { createTools } from '../tools.js';
-import { normalizeKinds, BoardError, buildCapture } from '../core.js';
-import { applyCapture, collectChanges, buildTurnBlock } from '../index.js';
+import { normalizeKinds, BoardError } from '../core.js';
+import { collectChanges } from '../index.js';
 import { buildIndex, searchIndex, queryTerms, estimateTokens, buildInjectText, hitView } from '../lib/recall.js';
 import { appendRecall, recallStats } from '../lib/recall-log.js';
 
@@ -133,71 +133,6 @@ await ok('每条记录只追加、历史修订号单调递增', async () => {
   }
 });
 
-await ok('对话里的 board 代码块按 AI 给的状态/类型/范围解析', async () => {
-  const text = [
-    '打印图标修好了，顺手补了回归测试。',
-    '',
-    '```board',
-    '已完成｜任务｜G5 前端｜修好打印图标｜补了回归测试',
-    '待办 | 决策 | 存储 | 看板改用 SQLite',
-    '```'
-  ].join('\n');
-  const out = buildCapture(text);
-  assert.equal(out.hasMarkers, true);
-  assert.equal(out.items.length, 2);
-  assert.deepEqual(out.items[0], { title: '修好打印图标', kind: 'task', status: 'done', scope: 'G5 前端', summary: '补了回归测试' });
-  assert.equal(out.items[1].kind, 'decision');
-  assert.equal(out.items[1].status, 'todo');
-  assert.equal(out.body.includes('```'), false, '正文里不应该留下代码块');
-});
-
-await ok('看不懂的 board 行被跳过并给出提示', async () => {
-  const text = '结论如下。\n\n```board\n状态｜类型｜范围｜标题\n胡说｜任务｜存储｜不该出现\n```';
-  const out = buildCapture(text);
-  assert.equal(out.items.length, 1);
-  assert.equal(out.items[0].title, '结论如下');
-  assert.ok(out.warnings.length >= 1);
-});
-
-await ok('没有 board 块时退化：首行做标题、待办', async () => {
-  const out = buildCapture('## 下一步\n\n把导入的备注补齐。');
-  assert.equal(out.items[0].title, '下一步');
-  assert.equal(out.items[0].status, 'todo');
-  assert.equal(out.items[0].kind, 'task');
-});
-
-await ok('空消息不写入', async () => {
-  assert.throws(() => buildCapture('   \n  '), err => err.code === 'EMPTY_MESSAGE');
-});
-
-await ok('从对话写入的条目带来源引用', async () => {
-  const plan = buildCapture('```board\n已完成｜任务｜G5 前端｜修好打印图标\n```');
-  const saved = store.record({
-    ...plan.items[0],
-    body: plan.body,
-    source: { type: 'session', ref: 'session-x#m-1' }
-  }, { by: 'human', note: '从对话加入看板' });
-  assert.equal(saved.status, 'done');
-  assert.equal(store.get(saved.id).source.ref, 'session-x#m-1');
-  assert.equal(store.get(saved.id).rev, 1);
-});
-
-await ok('落板：新建 → 重复算已存在 → 状态变了就更新', async () => {
-  const plan = buildCapture('```board\n待办｜任务｜存储｜验证捕获去重\n```');
-  const first = applyCapture(store, plan, { type: 'session', ref: 'session-y#m-2' });
-  assert.equal(first.created.length, 1);
-  assert.equal(first.created[0].status, 'todo');
-
-  const second = applyCapture(store, plan, null);
-  assert.equal(second.created.length, 0);
-  assert.equal(second.existing.length, 1);
-
-  const donePlan = buildCapture('```board\n已完成｜任务｜存储｜验证捕获去重\n```');
-  const third = applyCapture(store, donePlan, null);
-  assert.equal(third.updated.length, 1);
-  assert.equal(store.get(third.updated[0].id).status, 'done');
-});
-
 await ok('物理删除：记录从文件里消失，内存里也查不到', async () => {
   const it = store.record({ title: '误加的条目', kind: 'task' }, { by: 'ai' });
   store.update(it.id, { body: '错的内容' }, { by: 'ai', expectedRev: it.rev });
@@ -289,20 +224,6 @@ await ok('召回记录单独记账，不写进 records.jsonl', async () => {
   assert.equal(fs.existsSync(path.join(logDir, 'records.jsonl')), false);
 });
 
-await ok('注入块：相关条目带 id 和修订号', async () => {
-  const payload = {
-    messages: [{
-      id: 'm-inject',
-      role: 'user',
-      content: [{ type: 'text', text: '把打印图标那件事收尾' }]
-    }]
-  };
-  const block = buildTurnBlock(store, payload, { recallThreshold: 1, recallInjectLimit: 4 });
-  assert.match(block, /看板·本轮到相关/);
-  assert.match(block, /r\d/);
-  assert.match(block, /打印/);
-});
-
 await ok('轮内改动：能拿到旧状态和回滚点', async () => {
   const it = store.record({ title: '轮内改动测试', kind: 'task', status: 'in_progress' }, { by: 'ai' });
   const since = Date.now();
@@ -314,49 +235,6 @@ await ok('轮内改动：能拿到旧状态和回滚点', async () => {
   assert.equal(hit.status, 'done');
   assert.equal(hit.previousRev, 1);
   assert.equal(hit.note, '这轮做完了');
-});
-
-await ok('落板正文用说明，不再塞整篇原文', async () => {
-  const text = [
-    '## 结果',
-    '',
-    '打印图标修好了，补了回归测试。',
-    '',
-    '```board',
-    '已完成｜任务｜G5 新分组｜修好打印图标 v2｜补了回归测试，弹窗不再串数据',
-    '```',
-    '',
-    '后面还有一大段无关细节……'
-  ].join('\n');
-  const plan = buildCapture(text);
-  assert.equal(plan.items[0].summary, '补了回归测试，弹窗不再串数据');
-  const applied = applyCapture(store, plan, { type: 'session', ref: 's#m' }, { sourceLabel: '对话 · 2026-11-24' });
-  const item = store.get(applied.created[0].id);
-  assert.match(item.body, /补了回归测试/);
-  assert.match(item.body, /来源：对话/);
-  assert.ok(item.body.length < 90, '正文应该是一句话加来源，不是整篇');
-  assert.equal(item.body.includes('无关细节'), false);
-});
-
-await ok('原文进索引但不进正文', async () => {
-  const now = new Date().toISOString();
-  const items = new Map();
-  for (let i = 0; i < 40; i += 1) {
-    items.set('g' + i, {
-      id: 'g' + i, title: '占位 ' + i, body: '无关', status: 'done', kind: 'task',
-      scope: '占位', rev: 1, updatedAt: now
-    });
-  }
-  items.set('x1', {
-    id: 'x1', title: '某条目', body: '一句话说明', status: 'done', kind: 'task',
-    scope: 'G5', rev: 1, updatedAt: now
-  });
-  const extras = new Map([['x1', '原文里提到 dompurify 依赖缺失导致 XSS 防护失效']]);
-  const index = buildIndex(items, extras);
-  const hits = searchIndex(index, items, [{ text: 'dompurify 依赖缺失', weight: 1 }], { threshold: 1 });
-  assert.equal(hits[0].item.id, 'x1');
-  assert.ok(hits[0].matched.some(entry => entry.field === 'source'), '应该命中原文');
-  assert.match(hits[0].reason, /原文/);
 });
 
 console.log(`\n全部通过：${passed} 项`);

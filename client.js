@@ -544,15 +544,6 @@ window.__ModuleLoader__.load({
       }).join('；');
     }
 
-    const CAPTURE_CSS = `
-      .skcap-wrap { display:inline-flex; align-items:center; }
-      .skcap { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:var(--dsw-alias-label-secondary,#6b7280); border-radius:6px; padding:1px 8px; font:inherit; font-size:12px; line-height:20px; cursor:pointer; white-space:nowrap; }
-      .skcap:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); color:var(--dsw-alias-label-primary,#17181a); }
-      .skcap[disabled] { cursor:default; opacity:.7; }
-      .skcap.ok { color:var(--dsw-alias-state-success-primary,#16a34a); border-color:var(--dsw-alias-state-success-primary,#16a34a); }
-      .skcap.err { color:var(--dsw-alias-state-error-primary,#dc2626); border-color:var(--dsw-alias-state-error-primary,#dc2626); }
-    `;
-
     const RECALL_CSS = `
       .skrc-wrap { display:inline-flex; align-items:center; }
       .skrc-btn { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:var(--dsw-alias-label-secondary,#6b7280); border-radius:6px; padding:1px 8px; font:inherit; font-size:12px; line-height:20px; cursor:pointer; white-space:nowrap; }
@@ -575,102 +566,65 @@ window.__ModuleLoader__.load({
       .skrc-stats { margin-top:8px; color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
       .skrc-empty { color:var(--dsw-alias-label-secondary,#6b7280); }
       .skrc-err { color:var(--dsw-alias-state-error-primary,#dc2626); }
+      .skrc-block { border-bottom:1px solid var(--dsw-alias-border-l1,#e6e7eb); margin-bottom:8px; padding-bottom:6px; }
+      .skrc-block-title { font-weight:600; color:var(--dsw-alias-brand-primary,#2563eb); margin-bottom:2px; }
+      .skrc-change-actions { display:flex; gap:6px; justify-content:flex-end; margin-top:4px; }
+      .skrc-btn-sm { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; border-radius:6px; padding:1px 8px; font:inherit; font-size:11.5px; cursor:pointer; }
+      .skrc-btn-sm:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); }
     `;
-
-    const CHANGE_CSS = `
-      .sktc-wrap { display:inline-flex; align-items:center; }
-      .sktc-btn-main { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:var(--dsw-alias-label-secondary,#6b7280); border-radius:6px; padding:1px 8px; font:inherit; font-size:12px; line-height:20px; cursor:pointer; white-space:nowrap; }
-      .sktc-btn-main:hover { color:var(--dsw-alias-label-primary,#17181a); border-color:var(--dsw-alias-border-l2,#c9ccd3); }
-      .sktc-panel { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); width:min(520px,92vw); max-height:60vh; overflow:auto; background:var(--dsw-alias-bg-overlay,#fff); border:1px solid var(--dsw-alias-border-l1,#e6e7eb); border-radius:12px; box-shadow:0 18px 48px rgba(16,24,40,.24); padding:12px 14px; z-index:60; font-size:12px; line-height:1.55; color:var(--dsw-alias-label-primary,#17181a); }
-      .sktc-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-      .sktc-head b { font-size:13px; }
-      .sktc-meta { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; }
-      .sktc-x { margin-left:auto; border:0; background:transparent; color:var(--dsw-alias-label-secondary,#6b7280); cursor:pointer; font:inherit; font-size:12px; }
-      .sktc-row { padding:7px 0; border-bottom:1px dashed var(--dsw-alias-border-l1,#f0f1f4); }
-      .sktc-row:last-child { border-bottom:0; }
-      .sktc-title { font-weight:600; }
-      .sktc-sub { color:var(--dsw-alias-label-secondary,#6b7280); font-size:11.5px; margin-top:2px; }
-      .sktc-actions { margin-top:6px; display:flex; gap:6px; justify-content:flex-end; }
-      .sktc-btn { border:1px solid var(--dsw-alias-border-l1,#e6e7eb); background:var(--dsw-alias-bg-layer-1,#fff); color:inherit; border-radius:6px; padding:2px 9px; font:inherit; font-size:11.5px; cursor:pointer; }
-      .sktc-btn:hover { border-color:var(--dsw-alias-border-l2,#c9ccd3); }
-    `;
-
-    /** 助手消息动作：一键把这条消息加入全局看板（范围/类型/状态由 AI 在消息里给出）。 */
-    function CaptureAction(props) {
-      const [phase, setPhase] = useState('idle');
-      const [tip, setTip] = useState('');
-      const [count, setCount] = useState(0);
-      const sessionId = props && props.sessionId ? props.sessionId : '';
-      const messageId = props && props.messageId ? props.messageId : '';
-
-      const run = useCallback(() => {
-        if (phase === 'busy') return;
-        setPhase('busy');
-        api('capture', { sessionId, messageId })
-          .then(result => {
-            const created = (result && result.created) || [];
-            const updated = (result && result.updated) || [];
-            const existing = (result && result.existing) || [];
-            const warnings = (result && result.warnings) || [];
-            const parts = [];
-            if (created.length) parts.push('已加入：' + created.map(i => i.title).join('、'));
-            if (updated.length) parts.push('已更新：' + updated.map(i => i.title + ' → ' + statusLabel(i.status)).join('、'));
-            if (existing.length) parts.push('已在看板：' + existing.map(i => i.title).join('、'));
-            if (warnings.length) parts.push(warnings.join('；'));
-            setTip(parts.join(' ｜ '));
-            setCount(created.length + updated.length);
-            setPhase('ok');
-          })
-          .catch(error => {
-            setTip(error && error.message ? error.message : '加入失败');
-            setPhase('err');
-          });
-      }, [phase, sessionId, messageId]);
-
-      const label = phase === 'busy'
-        ? '…'
-        : phase === 'ok'
-          ? (count > 0 ? '✓' + count : '✓')
-          : phase === 'err'
-            ? '!'
-            : '+';
-      const tone = phase === 'ok' ? ' ok' : phase === 'err' ? ' err' : '';
-
-      return h('span', { className: 'skcap-wrap' },
-        h('style', null, CAPTURE_CSS),
-        h('button', {
-          type: 'button',
-          className: 'skcap' + tone,
-          disabled: phase === 'busy',
-          title: tip || '添加看板',
-          onClick: run
-        }, label)
-      );
-    }
 
     /** 只读召回预览：检索看板相关条目，展示但不注入模型（0 token）。 */
     function RecallAction(props) {
       const [state, setState] = useState('idle');
       const [data, setData] = useState(null);
+      const [changes, setChanges] = useState([]);
       const [open, setOpen] = useState(false);
       const sessionId = props && props.sessionId ? props.sessionId : '';
       const messageId = props && props.messageId ? props.messageId : '';
 
       const load = useCallback(() => {
+        if (state === 'busy') return;
         setState('busy');
-        api('recall', { sessionId, messageId })
-          .then(result => { setData(result); setState('ready'); setOpen(true); })
-          .catch(error => {
-            setData({ error: error && error.message ? error.message : '检索失败' });
-            setState('err');
-            setOpen(true);
-          });
-      }, [sessionId, messageId]);
+        Promise.all([
+          api('recall', { sessionId, messageId }),
+          api('turn.changes', { sessionId, messageId }).catch(() => ({ changes: [] }))
+        ]).then(([recallResult, changeResult]) => {
+          setData(recallResult);
+          setChanges(changeResult && Array.isArray(changeResult.changes) ? changeResult.changes : []);
+          setState('ready');
+          setOpen(true);
+        }).catch(error => {
+          setData({ error: error && error.message ? error.message : '检索失败' });
+          setState('err');
+          setOpen(true);
+        });
+      }, [state, sessionId, messageId]);
 
-      const toggle = useCallback(() => {
+      const toggle = useCallback(event => {
+        if (event && event.stopPropagation) event.stopPropagation();
         if (state === 'idle' || state === 'err') { load(); return; }
         setOpen(value => !value);
       }, [state, load]);
+
+      const dropChange = useCallback(id => {
+        setChanges(current => current.filter(change => change.id !== id));
+      }, []);
+
+      const revertChange = useCallback((event, change) => {
+        if (event && event.stopPropagation) event.stopPropagation();
+        if (!change || !change.previousRev) return;
+        api('rollback', { id: change.id, rev: change.previousRev })
+          .then(() => dropChange(change.id))
+          .catch(() => {});
+      }, [dropChange]);
+
+      const removeChange = useCallback((event, change) => {
+        if (event && event.stopPropagation) event.stopPropagation();
+        if (!change) return;
+        api('delete', { id: change.id })
+          .then(() => dropChange(change.id))
+          .catch(() => {});
+      }, [dropChange]);
 
       const views = (data && data.views) || [];
       const hitCount = views.filter(view => view.reason !== '低分' && view.reason !== '泛词').length;
@@ -678,14 +632,40 @@ window.__ModuleLoader__.load({
         : state === 'ready' ? ('kanban ' + hitCount + '/' + views.length)
           : 'kanban';
       const stats = (data && data.stats) || null;
+      const statusText = id => (STATUSES.find(s => s.id === id) || { label: id }).label;
 
-      const panel = open && data ? h('div', { className: 'skrc-panel' },
+      const changeRow = (change, index) => {
+        const line = change.created
+          ? '新建 · ' + change.statusLabel
+          : (change.from && change.from.status !== change.status
+            ? statusText(change.from.status) + ' → ' + change.statusLabel
+            : '内容更新 · ' + change.statusLabel);
+        return h('div', { key: change.id || ('c' + index), className: 'skrc-row' },
+          h('div', { className: 'skrc-title' }, change.title),
+          h('div', { className: 'skrc-sub' }, line + (change.note ? ' · ' + change.note : '')),
+          h('div', { className: 'skrc-change-actions' },
+            change.created
+              ? h('button', { className: 'skrc-btn-sm', onClick: event => removeChange(event, change) }, '删除')
+              : h('button', { className: 'skrc-btn-sm', onClick: event => revertChange(event, change) }, '回滚'),
+            h('button', {
+              className: 'skrc-btn-sm',
+              onClick: event => { if (event && event.stopPropagation) event.stopPropagation(); dropChange(change.id); }
+            }, '知道了')
+          )
+        );
+      };
+
+      const panel = open && data ? h('div', { className: 'skrc-panel', onClick: event => event.stopPropagation() },
         h('div', { className: 'skrc-head' },
-          h('b', null, '相关看板'),
-          h('span', { className: 'skrc-meta' }, '只展示，不注入 · 本次 0 token'),
+          h('b', null, 'kanban'),
+          h('span', { className: 'skrc-meta' }, '只展示 · 本次 0 token'),
           h('button', { className: 'skrc-x', onClick: () => setOpen(false) }, '关闭')
         ),
         data.error ? h('div', { className: 'skrc-err' }, data.error) : h('div', null,
+          changes.length > 0 ? h('div', { className: 'skrc-block' },
+            h('div', { className: 'skrc-block-title' }, '本轮看板改动 ' + changes.length),
+            changes.map(changeRow)
+          ) : null,
           h('div', { className: 'skrc-terms' },
             '本轮理解：' + ((data.query && data.query.terms && data.query.terms.length)
               ? data.query.terms.join(' · ')
@@ -720,86 +700,11 @@ window.__ModuleLoader__.load({
       return h('span', { className: 'skrc-wrap' },
         h('style', null, RECALL_CSS),
         h('button', {
+          type: 'button',
           className: 'skrc-btn' + (state === 'ready' ? ' on' : ''),
-          title: '相关看板',
+          title: '看板',
           onClick: toggle
         }, label),
-        panel
-      );
-    }
-
-    /** 本轮看板改动：AI 顺手改了哪些条目，给用户看一眼，可回滚/删除。 */
-    function TurnChangesAction(props) {
-      const [data, setData] = useState(null);
-      const [open, setOpen] = useState(false);
-      const sessionId = props && props.sessionId ? props.sessionId : '';
-      const messageId = props && props.messageId ? props.messageId : '';
-
-      useEffect(() => {
-        let alive = true;
-        api('turn.changes', { sessionId, messageId })
-          .then(result => {
-            if (alive && result && Array.isArray(result.changes) && result.changes.length > 0) setData(result);
-          })
-          .catch(() => {});
-        return () => { alive = false; };
-      }, [sessionId, messageId]);
-
-      const drop = useCallback(id => setData(current => {
-        if (!current) return current;
-        return {
-          ...current,
-          changes: (current.changes || []).filter(change => change.id !== id)
-        };
-      }), []);
-
-      const revert = useCallback(change => {
-        if (!change || !change.previousRev) return;
-        api('rollback', { id: change.id, rev: change.previousRev })
-          .then(() => drop(change.id))
-          .catch(() => {});
-      }, [drop]);
-
-      const removeIt = useCallback(change => {
-        if (!change) return;
-        api('delete', { id: change.id })
-          .then(() => drop(change.id))
-          .catch(() => {});
-      }, [drop]);
-
-      const changes = (data && data.changes) || [];
-      if (changes.length === 0) return null;
-
-      const panel = open ? h('div', { className: 'sktc-panel' },
-        h('div', { className: 'sktc-head' },
-          h('b', null, '本轮看板改动'),
-          h('span', { className: 'sktc-meta' }, '默认保留；可回滚或删除'),
-          h('button', { className: 'sktc-x', onClick: () => setOpen(false) }, '关闭')
-        ),
-        changes.map(change => h('div', { key: change.id, className: 'sktc-row' },
-          h('div', { className: 'sktc-title' }, change.title),
-          h('div', { className: 'sktc-sub' },
-            change.created
-              ? '新建 · ' + change.statusLabel
-              : (change.from && change.from.status !== change.status
-                ? (STATUSES.find(s => s.id === change.from.status) || { label: change.from.status }).label + ' → ' + change.statusLabel
-                : '内容更新 · ' + change.statusLabel),
-            change.note ? ' · ' + change.note : ''),
-          h('div', { className: 'sktc-actions' },
-            change.created
-              ? h('button', { className: 'sktc-btn', onClick: () => removeIt(change) }, '删除')
-              : h('button', { className: 'sktc-btn', onClick: () => revert(change) }, '回滚')
-          )
-        ))
-      ) : null;
-
-      return h('span', { className: 'sktc-wrap' },
-        h('style', null, CHANGE_CSS),
-        h('button', {
-          className: 'sktc-btn-main',
-          title: '本轮看板改动',
-          onClick: () => setOpen(value => !value)
-        }, '改动 ' + changes.length),
         panel
       );
     }
@@ -827,24 +732,10 @@ window.__ModuleLoader__.load({
 
         ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
           name: 'conversation.chat.assistant-actions',
-          id: 'saibo-capture',
-          order: 20,
-          label: '加入看板'
-        }, CaptureAction));
-
-        ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
-          name: 'conversation.chat.assistant-actions',
           id: 'saibo-recall',
           order: 21,
-          label: '相关看板'
+          label: 'kanban'
         }, RecallAction));
-
-        ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
-          name: 'conversation.chat.assistant-actions',
-          id: 'saibo-changes',
-          order: 22,
-          label: '看板改动'
-        }, TurnChangesAction));
       }
     };
   }
