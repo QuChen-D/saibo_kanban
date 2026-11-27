@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {
-  BoardError, assertTitle, assertKind, assertStatus, assertTransition, assertBody, condenseBody,
+  BoardError, assertTitle, assertKind, assertStatus, assertTransition, assertBody, condenseBody, normalizeAt,
   diffFields, nextId, isDraft, buildBrief, matchesQuery
 } from './core.js';
 
@@ -22,7 +22,7 @@ export function defaultDataDir() {
 
 function emptyItem() {
   return {
-    id: '', title: '', kind: 'task', status: 'backlog', scope: '', body: '',
+    id: '', title: '', kind: 'task', status: 'backlog', scope: '', body: '', at: '',
     source: null, verified: false, archived: false,
     rev: 0, createdAt: '', updatedAt: '', supersededBy: null, mergedInto: null
   };
@@ -112,6 +112,7 @@ export class Store {
     item.status = status;
     item.scope = typeof input.scope === 'string' ? input.scope : '';
     item.body = assertBody(input.body);
+    item.at = normalizeAt(input.at);
     item.source = normalizeSource(input.source);
     item.rev = 1;
     item.createdAt = now;
@@ -137,7 +138,7 @@ export class Store {
     }
     const next = { ...current };
     const safe = {};
-    for (const field of ['title', 'kind', 'status', 'scope', 'body']) {
+    for (const field of ['title', 'kind', 'status', 'scope', 'body', 'at']) {
       if (patch[field] === undefined) continue;
       safe[field] = patch[field];
     }
@@ -151,6 +152,7 @@ export class Store {
       throw new BoardError('INVALID_SCOPE', 'scope 必须是字符串');
     }
     if ('body' in safe) safe.body = assertBody(safe.body);
+    if ('at' in safe) safe.at = normalizeAt(safe.at);
     const changes = diffFields(current, safe);
     if (Object.keys(changes).length === 0) {
       return { item: current, changed: false, changes: {} };

@@ -264,6 +264,18 @@ await ok('正文保留换行与结构，只做清理；只有病态超长才拒�
   );
 });
 
+await ok('时间字段：可写入、可改、非法值拒绝', async () => {
+  const it = await call('board_record', { title: '时间字段测试', at: '2026-01-02' });
+  assert.equal(store.get(it.id).at, '2026-01-02');
+  const up = await call('board_update', { id: it.id, expectedRev: it.rev, at: '2026-03-04' });
+  assert.equal(up.rev, 2);
+  assert.equal(store.get(it.id).at, '2026-03-04');
+  await assert.rejects(
+    () => call('board_record', { title: '坏时间', at: '2026/1/2' }),
+    err => err.code === 'INVALID_AT'
+  );
+});
+
 console.log(`\n全部通过：${passed} 项`);
 console.log('样例档案：');
 console.log(fs.readFileSync(path.join(dir, 'records.jsonl'), 'utf8').split('\n').slice(0, 2).join('\n'));

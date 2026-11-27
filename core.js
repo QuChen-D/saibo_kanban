@@ -42,7 +42,7 @@ export class BoardError extends Error {
 }
 
 /** 可在修订里被改的字段。id / rev / createdAt / 来源 / verified 都不在此列。 */
-export const EDITABLE_FIELDS = ['title', 'kind', 'status', 'scope', 'body'];
+export const EDITABLE_FIELDS = ['title', 'kind', 'status', 'scope', 'body', 'at'];
 
 export function normalizeKinds(input) {
   if (!Array.isArray(input) || input.length === 0) return DEFAULT_KINDS.map(k => ({ ...k }));
@@ -81,7 +81,23 @@ export function assertTitle(title) {
   return title.trim();
 }
 
-/** 只是一道防滥用闸门，不是写作标准：看板是决策记忆，不是文档仓库。 */
+/**
+ * 业务时间：只有日期（YYYY-MM-DD），可留空——留空表示跟随条目的更新时间。
+ * 它是给人看的排序依据（这件事发生在哪天），不替代 createdAt / updatedAt。
+ */
+export function normalizeAt(value) {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim().slice(0, 10);
+  if (!text) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw new BoardError('INVALID_AT', '时间要写成 YYYY-MM-DD，或者留空');
+  }
+  const time = Date.parse(text + 'T00:00:00Z');
+  if (!Number.isFinite(time)) throw new BoardError('INVALID_AT', `不是有效日期：${text}`);
+  return text;
+}
+
+/** 只做一道防滥用闸门，不是写作标准：看板是决策记忆，不是文档仓库。 */
 export const BODY_MAX = 2000;
 
 /** 统一换行、去行尾空格、压缩连续空行。内容本身一字不改。 */

@@ -75,6 +75,19 @@ window.__ModuleLoader__.load({
       .sk-id { font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); width:86px; flex:none; }
       .sk-name { flex:0 0 260px; max-width:260px; cursor:text; border-radius:5px; padding:2px 4px; margin:-2px -4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .sk-content { flex:1 1 auto; min-width:0; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; padding:2px 4px; }
+      .sk-caret { border:0; background:transparent; color:inherit; font-size:10px; cursor:pointer; padding:0 1px; opacity:.5; }
+      .sk-caret:hover { opacity:1; }
+      .sk-caret.on { opacity:1; color:var(--dsw-alias-brand-primary,#2563eb); }
+      .sk-hcell { display:flex; align-items:center; gap:2px; }
+      .sk-hcell .sk-sel { min-width:0; flex:1 1 auto; }
+      .sk-sort { user-select:none; }
+      .sk-sort:hover { color:var(--dsw-alias-label-primary,#17181a); }
+      .sk-sort.on { color:var(--dsw-alias-brand-primary,#2563eb); }
+      .sk-time { width:92px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
+      .sk-th .sk-time { cursor:pointer; }
+      .sk-group { display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border-top:1px solid var(--dsw-alias-border-l1,#e6e7eb); font-weight:600; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); cursor:pointer; }
+      .sk-group:hover { background:var(--dsw-alias-bg-layer-1,#f0f1f4); }
+      .sk-group-n { margin-left:auto; font-weight:500; }
       .sk-body-text { white-space:pre-wrap; max-height:240px; overflow:auto; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px dashed var(--dsw-alias-border-l1,#e6e7eb); border-radius:7px; padding:7px 10px; font-size:12.5px; line-height:1.55; cursor:pointer; }
       .sk-card-body { margin-top:4px; font-size:12px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.5; }
       .sk-name:hover { background:var(--dsw-alias-bg-layer-2,#f3f4f6); }
@@ -137,6 +150,9 @@ window.__ModuleLoader__.load({
       const [bodyEditing, setBodyEditing] = useState(false);
       const [editing, setEditing] = useState(null);
       const [draft, setDraft] = useState('');
+      const [sort, setSort] = useState({ key: 'time', dir: 'desc' });
+      const [groupBy, setGroupBy] = useState('');
+      const [collapsed, setCollapsed] = useState(() => new Set());
       const [overCol, setOverCol] = useState(null);
       const [toast, setToast] = useState('');
       const [busy, setBusy] = useState(false);
@@ -274,9 +290,69 @@ window.__ModuleLoader__.load({
         })
       );
 
+      const sortValue = (item, key) => {
+        switch (key) {
+          case 'title': return item.title || '';
+          case 'kind': return kindLabel(item.kind);
+          case 'status': return statusLabel(item.status);
+          case 'scope': return item.scope || '';
+          case 'time': return item.at || item.updatedAt || '';
+          case 'rev': return item.rev;
+          default: return item.updatedAt || '';
+        }
+      };
+      const dirMul = sort.dir === 'asc' ? 1 : -1;
+      const sorted = visible.slice().sort((a, b) => {
+        const va = sortValue(a, sort.key);
+        const vb = sortValue(b, sort.key);
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dirMul;
+        return String(va).localeCompare(String(vb), 'zh-Hans-CN') * dirMul;
+      });
+      const groupLabel = item => (groupBy === 'scope' ? (item.scope || '未定范围')
+        : groupBy === 'status' ? statusLabel(item.status)
+          : kindLabel(item.kind));
+      const groups = (() => {
+        if (!groupBy) return [{ key: '', items: sorted }];
+        const map = new Map();
+        for (const item of sorted) {
+          const key = groupLabel(item);
+          if (!map.has(key)) map.set(key, []);
+          map.get(key).push(item);
+        }
+        return [...map.entries()].map(([key, items]) => ({ key, items }));
+      })();
+      const toggleGroup = key => setCollapsed(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+      });
+      const caret = key => h('button', {
+        type: 'button',
+        className: 'sk-caret' + (sort.key === key ? ' on' : ''),
+        title: '按这一列排序',
+        onClick: event => {
+          if (event && event.stopPropagation) event.stopPropagation();
+          setSort(current => ({ key, dir: current.key === key && current.dir === 'asc' ? 'desc' : 'asc' }));
+        }
+      }, sort.key === key ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅');
+
       let content = null;
       if (view === 'table') {
-        const shown = visible.slice(0, visibleCount);
+        const rows = [];
+        for (const group of groups) {
+          if (groupBy) rows.push({ group });
+          if (groupBy && collapsed.has(group.key)) continue;
+          for (const item of group.items) rows.push({ item });
+        }
+        const shownRows = [];
+        let itemCount = 0;
+        for (const row of rows) {
+          if (row.item) {
+            if (itemCount >= visibleCount) break;
+            itemCount += 1;
+          }
+          shownRows.push(row);
+        }
         content = h('div', null,
           h('div', { className: 'sk-quick' },
             h('span', { className: 'sk-k' }, '＋'),
@@ -284,75 +360,108 @@ window.__ModuleLoader__.load({
               placeholder: '快加一条（回车新建）',
               onKeyDown: e => { if (e.key === 'Enter') { create(e.currentTarget.value); e.currentTarget.value = ''; } }
             }),
+            h('select', {
+              className: 'sk-sel',
+              title: '分组',
+              value: groupBy,
+              onChange: e => setGroupBy(e.target.value)
+            },
+            h('option', { value: '' }, '不分组'),
+            h('option', { value: 'scope' }, '按范围'),
+            h('option', { value: 'status' }, '按状态'),
+            h('option', { value: 'kind' }, '按类型')),
             h('span', { style: { color: 'var(--dsw-alias-label-secondary,#6b7280)', fontSize: 12, whiteSpace: 'nowrap' } },
-              '共 ' + visible.length + ' 条' + (visible.length > shown.length ? ' · 已显示 ' + shown.length : ''))
+              '共 ' + visible.length + ' 条' + (visible.length > itemCount ? ' · 已显示 ' + itemCount : ''))
           ),
           h('div', { className: 'sk-panel' },
             h('div', { className: 'sk-row sk-th' },
               h('span', { className: 'sk-num' }, '#'),
-              h('span', { className: 'sk-name', style: { cursor: 'default' } }, '标题'),
+              h('span', {
+                className: 'sk-name sk-sort' + (sort.key === 'title' ? ' on' : ''),
+                style: { cursor: 'pointer' },
+                onClick: () => setSort(s => ({ key: 'title', dir: s.key === 'title' && s.dir === 'asc' ? 'desc' : 'asc' }))
+              }, '标题' + (sort.key === 'title' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '')),
               h('span', { className: 'sk-content', style: { cursor: 'default' } }, '内容'),
-              h('select', {
-                className: 'sk-sel sk-col-k', value: fKind,
-                onChange: e => setFKind(e.target.value)
-              }, h('option', { value: '' }, '类型'), KINDS.map(k => h('option', { key: k.id, value: k.id }, k.label))),
-              h('select', {
-                className: 'sk-sel sk-col-s', value: fStatus,
-                onChange: e => setFStatus(e.target.value)
-              }, h('option', { value: '' }, '状态'), STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label))),
-              h('select', {
-                className: 'sk-sel sk-col-sc', value: fScope,
-                onChange: e => setFScope(e.target.value)
-              }, h('option', { value: '' }, '范围'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
-              h('span', { className: 'sk-rev' }, '修订'),
+              h('span', { className: 'sk-col-k sk-hcell' },
+                caret('kind'),
+                h('select', {
+                  className: 'sk-sel', value: fKind,
+                  onChange: e => setFKind(e.target.value)
+                }, h('option', { value: '' }, '类型'), KINDS.map(k => h('option', { key: k.id, value: k.id }, k.label)))),
+              h('span', { className: 'sk-col-s sk-hcell' },
+                caret('status'),
+                h('select', {
+                  className: 'sk-sel', value: fStatus,
+                  onChange: e => setFStatus(e.target.value)
+                }, h('option', { value: '' }, '状态'), STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label)))),
+              h('span', { className: 'sk-col-sc sk-hcell' },
+                caret('scope'),
+                h('select', {
+                  className: 'sk-sel', value: fScope,
+                  onChange: e => setFScope(e.target.value)
+                }, h('option', { value: '' }, '范围'), scopeOptions.map(s => h('option', { key: s, value: s }, s)))),
+              h('span', { className: 'sk-time sk-sort' + (sort.key === 'time' ? ' on' : ''), onClick: () => setSort(s => ({ key: 'time', dir: s.key === 'time' && s.dir === 'asc' ? 'desc' : 'asc' })) },
+                '时间' + (sort.key === 'time' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '')),
+              h('span', { className: 'sk-rev sk-sort' + (sort.key === 'rev' ? ' on' : ''), onClick: () => setSort(s => ({ key: 'rev', dir: s.key === 'rev' && s.dir === 'asc' ? 'desc' : 'asc' })) },
+                '修订' + (sort.key === 'rev' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '')),
               h('span', { style: { width: 112 } }, '')
             ),
             visible.length === 0 ? h('div', { className: 'sk-empty' }, '没有匹配的条目。跟 agent 说“记一条…”，或在上面的输入框快加。') :
-            shown.map((item, index) => h('div', { key: item.id, className: 'sk-row' },
-              h('span', { className: 'sk-num' }, String(index + 1)),
-              h('div', {
-                className: 'sk-name',
-                onClick: () => { setEditing(item.id); setDraft(item.title); }
-              }, editing === item.id ? h('input', {
-                autoFocus: true, value: draft,
-                onChange: e => setDraft(e.target.value),
-                onBlur: () => commitTitle(item),
-                onKeyDown: e => {
-                  if (e.key === 'Enter') e.currentTarget.blur();
-                  if (e.key === 'Escape') setEditing(null);
-                }
-              }) : item.title),
-              h('div', {
-                className: 'sk-content',
-                title: item.body || '',
-                onClick: () => openDetail(item.id)
-              }, item.body ? displayContent(item.body) : '—'),
-              h('select', {
-                className: 'sk-sel sk-col-k', value: item.kind,
-                onChange: e => update(item.id, item.rev, { kind: e.target.value })
-              }, KINDS.map(k => h('option', { key: k.id, value: k.id }, k.label))),
-              h('select', {
-                className: 'sk-sel sk-col-s', value: item.status,
-                onChange: e => setStatus(item, e.target.value)
-              }, STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label))),
-              h('select', {
-                className: 'sk-sel sk-col-sc', value: item.scope || '',
-                onChange: e => update(item.id, item.rev, { scope: e.target.value })
-              }, h('option', { value: '' }, '未定'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
-              h('span', { className: 'sk-rev' }, 'r' + item.rev),
-              h('div', { style: { display: 'flex', gap: 4, flex: '0 0 auto' } },
-                h('button', { className: 'sk-btn sk-detail-btn', onClick: () => openDetail(item.id) }, '详情'),
-                h('button', {
-                  className: 'sk-btn sk-detail-btn danger',
-                  title: '物理删除（只在条目本身搞错了时用，删了不能恢复）',
-                  onClick: () => setDel(item)
-                }, '删')
-              )
-            )),
+            shownRows.map((row, index) => row.group
+              ? h('div', {
+                key: 'g:' + row.group.key,
+                className: 'sk-group',
+                onClick: () => toggleGroup(row.group.key)
+              },
+              h('span', null, collapsed.has(row.group.key) ? '▸' : '▾'),
+              h('span', null, row.group.key || '未分组'),
+              h('span', { className: 'sk-group-n' }, row.group.items.length + ' 条'))
+              : h('div', { key: row.item.id, className: 'sk-row' },
+                h('span', { className: 'sk-num' }, String(index + 1)),
+                h('div', {
+                  className: 'sk-name',
+                  onClick: () => { setEditing(row.item.id); setDraft(row.item.title); }
+                }, editing === row.item.id ? h('input', {
+                  autoFocus: true, value: draft,
+                  onChange: e => setDraft(e.target.value),
+                  onBlur: () => commitTitle(row.item),
+                  onKeyDown: e => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    if (e.key === 'Escape') setEditing(null);
+                  }
+                }) : row.item.title),
+                h('div', {
+                  className: 'sk-content',
+                  title: row.item.body || '',
+                  onClick: () => openDetail(row.item.id)
+                }, row.item.body ? displayContent(row.item.body) : '—'),
+                h('select', {
+                  className: 'sk-sel sk-col-k', value: row.item.kind,
+                  onChange: e => update(row.item.id, row.item.rev, { kind: e.target.value })
+                }, KINDS.map(k => h('option', { key: k.id, value: k.id }, k.label))),
+                h('select', {
+                  className: 'sk-sel sk-col-s', value: row.item.status,
+                  onChange: e => setStatus(row.item, e.target.value)
+                }, STATUSES.map(s => h('option', { key: s.id, value: s.id }, s.label))),
+                h('select', {
+                  className: 'sk-sel sk-col-sc', value: row.item.scope || '',
+                  onChange: e => update(row.item.id, row.item.rev, { scope: e.target.value })
+                }, h('option', { value: '' }, '未定'), scopeOptions.map(s => h('option', { key: s, value: s }, s))),
+                h('span', { className: 'sk-time', title: (row.item.at || row.item.updatedAt || '') }, (row.item.at || row.item.updatedAt || '').slice(0, 10)),
+                h('span', { className: 'sk-rev' }, 'r' + row.item.rev),
+                h('div', { style: { display: 'flex', gap: 4, flex: '0 0 auto' } },
+                  h('button', { className: 'sk-btn sk-detail-btn', onClick: () => openDetail(row.item.id) }, '详情'),
+                  h('button', {
+                    className: 'sk-btn sk-detail-btn danger',
+                    title: '物理删除（只在条目本身搞错了时用，删了不能恢复）',
+                    onClick: () => setDel(row.item)
+                  }, '删')
+                )
+              )),
             h('div', { ref: sentinelRef, style: { height: 1 } }),
-            visible.length > shown.length ? h('div', { style: { padding: 10 } },
+            visible.length > itemCount ? h('div', { style: { padding: 10 } },
               h('button', { className: 'sk-btn', onClick: () => setVisibleCount(c => c + 100) },
-                '加载更多（' + shown.length + ' / ' + visible.length + '）')) : null
+                '加载更多（' + itemCount + ' / ' + visible.length + '）')) : null
           )
         );
       } else if (view === 'board') {
@@ -446,6 +555,17 @@ window.__ModuleLoader__.load({
                 className: 'sk-body-text',
                 onClick: () => setBodyEditing(true)
               }, detail.item.body || '（空，点一下写点东西）')),
+          h('div', { className: 'sk-field', style: { maxWidth: 200 } },
+            h('label', null, '时间（留空 = 用最后更新时间）'),
+            h('input', {
+              type: 'date',
+              key: detail.item.id + ':' + detail.item.rev + ':at',
+              defaultValue: (detail.item.at || '').slice(0, 10),
+              onChange: e => {
+                const value = e.target.value;
+                update(detail.item.id, detail.item.rev, { at: value });
+              }
+            })),
           h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
             h('select', {
               className: 'sk-sel', value: detail.item.status,

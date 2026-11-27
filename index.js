@@ -114,6 +114,7 @@ function dispatch(ctx, store, settings, turnState, method, args) {
         kind: args.kind || 'task',
         scope: args.scope || '',
         body: args.body || '',
+        at: args.at || '',
         status: args.status || 'backlog'
       }, { by: 'human', note: '页面新建' });
       return { item: publicItem(item) };
@@ -368,6 +369,8 @@ function publicItem(item) {
     status: item.status,
     scope: item.scope,
     body: item.body,
+    at: item.at || '',
+    createdAt: item.createdAt,
     archived: item.archived,
     rev: item.rev,
     updatedAt: item.updatedAt,

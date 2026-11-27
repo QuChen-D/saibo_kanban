@@ -83,6 +83,7 @@ export function createTools(store, options = {}) {
           scope: { type: 'string', description: '所属范围，例如“看板插件”“存储”；不确定就省略' },
           body: { type: 'string', description: '正文：第一行写结论（不看标题也能读懂），需要时再补「为什么」「以后」；说人话、少废话，不复述标题' },
           status: { type: 'string', enum: statusIds.filter(s => s !== 'done'), description: '初始状态，默认 backlog' },
+          at: { type: 'string', description: '业务时间 YYYY-MM-DD；省略表示用最后更新时间' },
           source: {
             type: 'object',
             description: '来源：type=session/file/web/manual，ref=会话 id 或文件名',
@@ -119,6 +120,7 @@ export function createTools(store, options = {}) {
           status: { type: 'string', enum: statusIds },
           scope: { type: 'string' },
           body: { type: 'string', description: '正文：第一行结论，可再补「为什么」「以后」' },
+          at: { type: 'string', description: '业务时间 YYYY-MM-DD；留空表示跟随更新时间' },
           note: { type: 'string', description: '这次改动的理由，会写进修订历史' }
         },
         required: ['id', 'expectedRev'],
@@ -136,7 +138,7 @@ export function createTools(store, options = {}) {
       },
       execute: wrap(async args => {
         const patch = {};
-        for (const field of ['title', 'kind', 'status', 'scope', 'body']) {
+        for (const field of ['title', 'kind', 'status', 'scope', 'body', 'at']) {
           if (args[field] !== undefined) patch[field] = args[field];
         }
         const result = store.update(args.id, patch, {
@@ -163,6 +165,7 @@ export function createTools(store, options = {}) {
           kind: { type: 'string', enum: kindIds },
           scope: { type: 'string' },
           body: { type: 'string', description: '正文：第一行结论，可再补「为什么」「以后」' },
+          at: { type: 'string', description: '业务时间 YYYY-MM-DD' },
           status: { type: 'string', enum: statusIds.filter(s => s !== 'done'), description: '新条目状态，默认 in_review' },
           note: { type: 'string' }
         },
