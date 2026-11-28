@@ -85,8 +85,12 @@ window.__ModuleLoader__.load({
       .sk-sort.on { color:var(--dsw-alias-brand-primary,#2563eb); }
       .sk-time { width:92px; flex:none; text-align:right; font-size:11.5px; color:var(--dsw-alias-label-secondary,#6b7280); }
       .sk-th .sk-time { cursor:pointer; }
-      .sk-group { display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border-top:1px solid var(--dsw-alias-border-l1,#e6e7eb); font-weight:600; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); cursor:pointer; }
+      .sk-group { display:flex; align-items:center; gap:8px; padding:7px 10px; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border-top:1px solid var(--dsw-alias-border-l1,#e6e7eb); font-weight:600; font-size:12.5px; color:var(--dsw-alias-label-secondary,#6b7280); cursor:pointer; user-select:none; }
       .sk-group:hover { background:var(--dsw-alias-bg-layer-1,#f0f1f4); }
+      .sk-group-toggle { width:20px; height:20px; flex:none; display:inline-flex; align-items:center; justify-content:center; border:0; background:transparent; color:inherit; font-size:11px; line-height:1; cursor:pointer; border-radius:4px; padding:0; }
+      .sk-group-toggle:hover { background:var(--dsw-alias-bg-base,#fff); color:var(--dsw-alias-label-primary,#17181a); }
+      .sk-group-name { font-weight:650; color:var(--dsw-alias-label-primary,#17181a); }
+      .sk-group-stats { color:var(--dsw-alias-label-secondary,#6b7280); font-weight:500; font-size:11.5px; }
       .sk-group-n { margin-left:auto; font-weight:500; }
       .sk-body-text { white-space:pre-wrap; max-height:240px; overflow:auto; background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px dashed var(--dsw-alias-border-l1,#e6e7eb); border-radius:7px; padding:7px 10px; font-size:12.5px; line-height:1.55; cursor:pointer; }
       .sk-card-body { margin-top:4px; font-size:12px; color:var(--dsw-alias-label-secondary,#6b7280); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.5; }
@@ -151,8 +155,8 @@ window.__ModuleLoader__.load({
       const [editing, setEditing] = useState(null);
       const [draft, setDraft] = useState('');
       const [sort, setSort] = useState({ key: 'time', dir: 'desc' });
-      const [groupBy, setGroupBy] = useState('');
-      const [collapsed, setCollapsed] = useState(() => new Set());
+      const [groupBy, setGroupBy] = useState('scope');
+      const [expanded, setExpanded] = useState(() => new Set());
       const [overCol, setOverCol] = useState(null);
       const [toast, setToast] = useState('');
       const [busy, setBusy] = useState(false);
@@ -301,27 +305,36 @@ window.__ModuleLoader__.load({
           default: return item.updatedAt || '';
         }
       };
-      const dirMul = sort.dir === 'asc' ? 1 : -1;
-      const sorted = visible.slice().sort((a, b) => {
-        const va = sortValue(a, sort.key);
-        const vb = sortValue(b, sort.key);
-        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dirMul;
-        return String(va).localeCompare(String(vb), 'zh-Hans-CN') * dirMul;
-      });
-      const groupLabel = item => (groupBy === 'scope' ? (item.scope || '未定范围')
-        : groupBy === 'status' ? statusLabel(item.status)
-          : kindLabel(item.kind));
-      const groups = (() => {
+      const sorted = useMemo(() => {
+        const dirMul = sort.dir === 'asc' ? 1 : -1;
+        return visible.slice().sort((a, b) => {
+          const va = sortValue(a, sort.key);
+          const vb = sortValue(b, sort.key);
+          if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dirMul;
+          return String(va).localeCompare(String(vb), 'zh-Hans-CN') * dirMul;
+        });
+      }, [visible, sort]);
+      const groups = useMemo(() => {
         if (!groupBy) return [{ key: '', items: sorted }];
+        const label = item => (groupBy === 'scope' ? (item.scope || '未定范围')
+          : groupBy === 'status' ? statusLabel(item.status)
+            : kindLabel(item.kind));
         const map = new Map();
         for (const item of sorted) {
-          const key = groupLabel(item);
+          const key = label(item);
           if (!map.has(key)) map.set(key, []);
           map.get(key).push(item);
         }
         return [...map.entries()].map(([key, items]) => ({ key, items }));
-      })();
-      const toggleGroup = key => setCollapsed(prev => {
+      }, [sorted, groupBy]);
+      const statusStats = items => STATUSES
+        .map(status => {
+          const count = items.filter(item => item.status === status.id).length;
+          return count ? status.label + ' ' + count : '';
+        })
+        .filter(Boolean)
+        .join(' · ');
+      const toggleGroup = key => setExpanded(prev => {
         const next = new Set(prev);
         if (next.has(key)) next.delete(key); else next.add(key);
         return next;
@@ -341,7 +354,7 @@ window.__ModuleLoader__.load({
         const rows = [];
         for (const group of groups) {
           if (groupBy) rows.push({ group });
-          if (groupBy && collapsed.has(group.key)) continue;
+          if (groupBy && !expanded.has(group.key)) continue;
           for (const item of group.items) rows.push({ item });
         }
         const shownRows = [];
@@ -371,7 +384,7 @@ window.__ModuleLoader__.load({
             h('option', { value: 'status' }, '按状态'),
             h('option', { value: 'kind' }, '按类型')),
             h('span', { style: { color: 'var(--dsw-alias-label-secondary,#6b7280)', fontSize: 12, whiteSpace: 'nowrap' } },
-              '共 ' + visible.length + ' 条' + (visible.length > itemCount ? ' · 已显示 ' + itemCount : ''))
+              '共 ' + visible.length + ' 条' + (itemCount > 0 && visible.length > itemCount ? ' · 已显示 ' + itemCount : ''))
           ),
           h('div', { className: 'sk-panel' },
             h('div', { className: 'sk-row sk-th' },
@@ -411,10 +424,19 @@ window.__ModuleLoader__.load({
               ? h('div', {
                 key: 'g:' + row.group.key,
                 className: 'sk-group',
-                onClick: () => toggleGroup(row.group.key)
+                role: 'button',
+                tabIndex: 0,
+                onClick: () => toggleGroup(row.group.key),
+                onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(row.group.key); } }
               },
-              h('span', null, collapsed.has(row.group.key) ? '▸' : '▾'),
-              h('span', null, row.group.key || '未分组'),
+              h('button', {
+                type: 'button',
+                className: 'sk-group-toggle',
+                title: expanded.has(row.group.key) ? '折叠' : '展开',
+                onClick: e => { e.stopPropagation(); toggleGroup(row.group.key); }
+              }, expanded.has(row.group.key) ? '▾' : '▸'),
+              h('span', { className: 'sk-group-name' }, row.group.key || '未分组'),
+              h('span', { className: 'sk-group-stats' }, statusStats(row.group.items)),
               h('span', { className: 'sk-group-n' }, row.group.items.length + ' 条'))
               : h('div', { key: row.item.id, className: 'sk-row' },
                 h('span', { className: 'sk-num' }, String(index + 1)),
@@ -459,7 +481,7 @@ window.__ModuleLoader__.load({
                 )
               )),
             h('div', { ref: sentinelRef, style: { height: 1 } }),
-            visible.length > itemCount ? h('div', { style: { padding: 10 } },
+            visible.length > itemCount && itemCount > 0 ? h('div', { style: { padding: 10 } },
               h('button', { className: 'sk-btn', onClick: () => setVisibleCount(c => c + 100) },
                 '加载更多（' + itemCount + ' / ' + visible.length + '）')) : null
           )
